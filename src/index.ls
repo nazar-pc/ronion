@@ -28,10 +28,10 @@ function to_string (array)
 /**
  * @param {Uint8Array} packet
  *
- * @return {array} [version: number, path_id: Uint8Array]
+ * @return {array} [version: number, segment_id: Uint8Array]
  */
 function parse_packet_header (packet)
-	# First byte is version, next 2 bytes are path_id
+	# First byte is version, next 2 bytes are segment_id
 	[packet[0], packet.subarray(1, 2)]
 
 /**
@@ -60,11 +60,11 @@ function parse_packet_data_plaintext (packet_data)
 		return new Router(version, packet_size, address_length, mac_length)
 	async-eventer.call(@)
 
-	@_version			= version
-	@_packet_size		= packet_size
-	@_address_length	= address_length
-	@_mac_length		= mac_length
-	@_established_paths	= new Set
+	@_version				= version
+	@_packet_size			= packet_size
+	@_address_length		= address_length
+	@_mac_length			= mac_length
+	@_established_segments	= new Set
 
 Router:: =
 	/**
@@ -75,11 +75,11 @@ Router:: =
 		# Do nothing if packet size is incorrect
 		if packet.length != @_packet_size
 			return
-		[version, path_id]	= parse_packet_header(packet)
+		[version, segment_id]	= parse_packet_header(packet)
 		# Do nothing the version is unsupported
 		if version != @_version
 			return
-		source_id	= to_string(source_address) + to_string(path_id)
+		source_id	= to_string(source_address) + to_string(segment_id)
 		packet_data	= packet.subarray(3)
 		# If path is not established then we don't use encryption yet
 		if !@_established_paths.has(source_id)

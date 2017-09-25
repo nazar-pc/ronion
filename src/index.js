@@ -30,7 +30,7 @@
   /**
    * @param {Uint8Array} packet
    *
-   * @return {array} [version: number, path_id: Uint8Array]
+   * @return {array} [version: number, segment_id: Uint8Array]
    */
   function parse_packet_header(packet){
     return [packet[0], packet.subarray(1, 2)];
@@ -65,7 +65,7 @@
     this._packet_size = packet_size;
     this._address_length = address_length;
     this._mac_length = mac_length;
-    this._established_paths = new Set;
+    this._established_segments = new Set;
   }
   Router.prototype = {
     /**
@@ -73,15 +73,15 @@
      * @param {Uint8Array}	packet			Packet
      */
     process_packet: function(source_address, packet){
-      var ref$, version, path_id, source_id, packet_data;
+      var ref$, version, segment_id, source_id, packet_data;
       if (packet.length !== this._packet_size) {
         return;
       }
-      ref$ = parse_packet_header(packet), version = ref$[0], path_id = ref$[1];
+      ref$ = parse_packet_header(packet), version = ref$[0], segment_id = ref$[1];
       if (version !== this._version) {
         return;
       }
-      source_id = to_string(source_address) + to_string(path_id);
+      source_id = to_string(source_address) + to_string(segment_id);
       packet_data = packet.subarray(3);
       if (!this._established_paths.has(source_id)) {
         this._process_packet_data_plaintext(source_id, packet_data);
