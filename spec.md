@@ -1,4 +1,4 @@
-Ronion version 0.0.7
+Ronion version 0.0.8
 
 ### Introduction
 This document is a textual specification of the Ronion anonymous routing protocol framework.
@@ -9,7 +9,8 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 #### Glossary
 * Initiator: the node that initiates communication
 * Responder: the node with which initiator wants to communicate with
-* Routing path: a sequence of nodes, represented by their addresses, that form a path through which initiator and responder are connected
+* Routing path: a sequence of nodes that form a path through which initiator and responder are connected and can anonymously send encrypted data
+* Routing path segment: part of routing path between 2 adjacent nodes, on each node routing path segment is identified using routing path segment identifier and address of the node on the other end of the segment
 * Packet: set of bytes to be transferred from one node to another
 * Application: software that uses implementation of this protocol
 
@@ -47,12 +48,12 @@ Exact value can be specified after data piece size separated by coma: `[data: 2,
 
 #### Packet format
 ```
-[version: 1][path_id: 2][packet_data]
+[version: 1][segment_id: 2][packet_data]
 ```
 
 `[version]` encapsulates address format, crypto algorithms used, set of commands and other important details used on that connection, supplied by application.
 Version is kept the same on each hop of the same routing path and never changes in the middle of the routing path.
-`[path_id]` is unique to each segment of the network, the response MUST always preserve `[path_id]` of the request so that it is clear where to send it.
+`[segment_id]` is unique to each segment of the network, the response MUST always preserve `[segment_id]` of the request so that it is clear where to send it further.
 
 #### Packet size
 Total packet size is fixed and configured by application, padding with random bytes is used when needed as described in corresponding sections.
@@ -78,25 +79,24 @@ The list of supported commands is given below, unused numbers are reserved for f
 | DATA            | 6             |
 
 ### Routing path construction
-Routing path construction is started by initiator with sending `CREATE_REQUEST` command to the first node in routing path.
-Then initiator sends `EXTEND_REQUEST` command to the first node in order to extend the path to the second node.
-Initiator keeps sending `EXTEND_REQUEST` commands to the last node in path until last node in path is responder, at which point path is ready to send data back and forth.
+Routing path construction is started by initiator with sending `CREATE_REQUEST` command to the first node in routing path in order to create the first routing path segment.
+Then initiator sends `EXTEND_REQUEST` command to the first node in order to extend the routing path by one more segment to the second node.
+Initiator keeps sending `EXTEND_REQUEST` commands to the last node in current routing path until last node in routing path is responder, at which point routing path is ready to send data back and forth.
 
 ### Plain text commands
-These commands are used prior to establishing path with specified `[path_id]`, as soon as path is established only encrypted commands MUST be accepted.
+These commands are used prior to establishing routing path segments with specified `[segment_id]`, as soon as routing path segment is established only encrypted commands MUST be accepted.
 
 #### CREATE_REQUEST
 Is sent when creating segment of routing path is needed, can be send multiple times to the same node if multiple roundtrips are needed.
 
 Request data:
 ```
-[command: 1, 1][path_creation_request_data_length: 2][path_creation_request_data: path_creation_request_data_length][random_bytes_padding]
+[command: 1, 1][segment_creation_request_data_length: 2][segment_creation_request_data: segment_creation_request_data_length][random_bytes_padding]
 ```
 
 Request data handling:
-* only proceed if for `[path_id]` path was not established yet, otherwise assume that contents is encrypted
-* `[path_creation_request_data]` is consumed by the node in order to perform path creation
-* `[path_id]` is linked by protocol implementation with address of the node where `CREATE_REQUEST` came from, together `[path_id]` and node address uniquely identify routing path segment
+* `[segment_creation_request_data]` is consumed by the node in order to generate keys for routing path segment creation
+* `[segment_id]` is linked by protocol implementation with address of the node where `CREATE_REQUEST` came from, together `[segment_id]` and node address uniquely identify routing path segment
 * responds to the previous node with `CREATE_RESPONSE` command
 
 #### CREATE_RESPONSE
@@ -104,15 +104,15 @@ Is sent as an answer to `CREATE_REQUEST`, is sent exactly once in response to ea
 
 Response data:
 ```
-[command: 1, 2][path_creation_response_data_length: 2][path_creation_response_data: path_creation_response_data_length][random_bytes_padding]
+[command: 1, 2][segment_creation_response_data_length: 2][segment_creation_response_data: segment_creation_response_data_length][random_bytes_padding]
 ```
 
 Response data handling:
-* if current node has initiated `CREATE_REQUEST` then `[path_creation_response_data]` is consumed by the node in order to perform path creation
+* if current node has initiated `CREATE_REQUEST` then `[segment_creation_response_data]` is consumed by the node in order to perform routing path segment creation
 * if current node has not initiated `CREATE_REQUEST`, but instead it `EXTEND_REQUEST` command was sent by another node, `EXTEND_RESPONSE` is generated in response
 
 ### Encrypted commands
-These commands are used after establishing path with specified `[path_id]`.
+These commands are used after establishing routing path segment with specified `[segment_id]` and corresponding node address.
 
 Each encrypted command request data follows following pattern:
 ```
@@ -124,38 +124,38 @@ Where `[command_data_length]` bytes of `[command_data]` (not including MAC) also
 #### EXTEND_REQUEST command
 Is used in order to extend routing path one segment further, effectively generates `CREATE_REQUEST` to the next node.
 
-If `[path_id]` was previously extended to another node, that link between `[path_id]` of the previous node and `[path_id]` of the next node MUST be destroyed and new path extension MUST be performed.
+If `[segment_id]` was previously extended to another node, that link between `[segment_id]` of the previous node and `[segment_id]` of the next node MUST be destroyed and new routing path extension MUST be performed.
 
 Request data:
 ```
-{[command: 1, 3][address_and_path_creation_request_data_length: 2]}{[next_node_address][path_creation_request_data]}[random_bytes_padding]
+{[command: 1, 3][address_and_segment_creation_request_data_length: 2]}{[next_node_address][segment_creation_request_data]}[random_bytes_padding]
 ```
 
 Request data handling:
 * decrypt command and command data length
-* if command is `EXTEND_REQUEST`, then decrypt `[next_node_address]` and `[path_creation_request_data]` then send `CREATE_REQUEST` command to the `[next_node_address]` using newly generated `[path_id]` for that segment
-* `[path_id]` of the previous node and `[path_id]` of the next node MUST be linked together by protocol implementation for future data forwarding
+* if command is `EXTEND_REQUEST`, then decrypt `[next_node_address]` and `[segment_creation_request_data]` then send `CREATE_REQUEST` command to the `[next_node_address]` using newly generated `[segment_id]` for that segment
+* `[segment_id]` of the previous node and `[segment_id]` of the next node MUST be linked together by protocol implementation for future data forwarding
 
 `CREATE_REQUEST` request data being sent:
 ```
-[command: 1, 4][path_creation_request_data_length: 2][path_creation_request_data: path_creation_request_data_length][random_bytes_padding]
+[command: 1, 4][segment_creation_request_data_length: 2][segment_creation_request_data: segment_creation_request_data_length][random_bytes_padding]
 ```
 
 #### EXTEND_RESPONSE command
-Is used in order to extend routing path one segment further, effectively wraps `CREATE_RESPONSE` from next node.
+Is used in order to extend routing path one segment further, effectively wraps `CREATE_RESPONSE` from next node and send it to the previous node.
 
 Response data:
 ```
-{[command: 1, 4][path_creation_response_data_length][path_creation_response_data]}[random_bytes_padding]
+{[command: 1, 4][segment_creation_response_data_length][segment_creation_response_data]}[random_bytes_padding]
 ```
 
-Where `[path_creation_response_data_length][path_creation_response_data]` part is taken from the beginning of the `CREATE_RESPONSE` data directly.
+Where `[segment_creation_response_data_length][segment_creation_response_data]` part is taken from the beginning of the `CREATE_RESPONSE` data directly.
 
 Response data handling:
-* if `[path_creation_response_data_length]` has value `0`, it means that path creation has failed (can happen if node can't extend the path, for instance, when node with specified address doesn't exist)
+* if `[segment_creation_response_data_length]` has value `0`, it means that routing path creation has failed (can happen if node can't extend the routing path, for instance, when node with specified address doesn't exist)
 
 #### DESTROY command
-Is used in order to destroy certain segment of the path. This command MUST always be sent to the last node in the path.
+Is used in order to destroy certain segment of the routing path. This command MUST always be sent to the last node in the routing path.
 
 Request data:
 ```
@@ -164,7 +164,7 @@ Request data:
 
 No response is needed for this command, can be sent to nodes if unsure whether node is still alive and will actually receive the message.
 
-After dropping the segment of the path, the last node left in path can be used to again extend path to another node.
+After dropping the segment of the routing path, the last node left in the routing path can be used to again extend routing path to another node.
 
 #### DATA command
 Is used to actually transfer useful data between applications on different nodes.
@@ -190,7 +190,7 @@ Initiator upon receiving the data tries to decrypt data with keys that correspon
 The order in which keys are selected is up to the application or implementation, generally starting from the keys of the last node in the routing path and moving to the first node is a good idea.
 
 #### Dropping packets
-If packets were forwarded through the whole path and the last node (either initiator or responder) still can't decrypt the packet, the packet is silently dropped.
+If packets were forwarded through the whole routing path and the last node (either initiator or responder) still can't decrypt the packet, the packet is silently dropped.
 If packet is decrypted successfully, but command is unknown, the packet is silently dropped.
 Undecryptable or packets with non-existing command (just to stop data from moving to the next node) can be used to generate fake activity.
 
@@ -198,5 +198,5 @@ Undecryptable or packets with non-existing command (just to stop data from movin
 Here is the list of things an application developer SHOULD consider in order to have secure and anonymous communication:
 * application MUST always use authenticated encryption
 * padding MUST always use random bytes and MUST NOT re-use the same random bytes again
-* initiator MUST use separate temporary keys for each node and each `[path_id]` it communicates with and MUST never re-use the same keys for different nodes or different `[path_id]` again
-* application on any node MIGHT want to send fake packets, apply custom delays between sending packets and forward packets from independent `[path_id]` in different order than they have come to the node in order to confuse an observer
+* initiator MUST use separate temporary keys for each node and each `[segment_id]` it communicates with and MUST never re-use the same keys for different nodes or different `[segment_id]` again
+* application on any node MIGHT want to send fake packets, apply custom delays between sending packets and forward packets from independent `[segment_id]` in different order than they have come to the node in order to confuse an observer
