@@ -1,4 +1,10 @@
-Ronion version 0.0.8
+# Ronion anonymous routing protocol framework specification
+
+Specification version: 0.0.8
+
+Author: Nazar Mokrynskyi
+
+License: Ronion anonymous routing protocol framework specification (this document) is hereby placed in the public domain
 
 ### Introduction
 This document is a textual specification of the Ronion anonymous routing protocol framework.

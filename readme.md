@@ -10,4 +10,6 @@ This protocol and reference implementation are intended to be secure, but until 
 WARNING: WIP, not ready for any use, API is incomplete, unstable, etc.
 
 ## License
-MIT, see license.txt
+Implementation: MIT, see license.txt
+
+Specification: public domain
