@@ -1,4 +1,4 @@
-Ronion version 0.0.6
+Ronion version 0.0.7
 
 ### Introduction
 This document is a textual specification of the Ronion anonymous routing protocol framework.
@@ -96,8 +96,8 @@ Request data:
 Request data handling:
 * only proceed if for `[path_id]` path was not established yet, otherwise assume that contents is encrypted
 * `[path_creation_request_data]` is consumed by the node in order to perform path creation
-* `[path_id]` is stored by application and associated with connection where the request came from
-* responds to the previos node with `CREATE_RESPONSE` command
+* `[path_id]` is linked by protocol implementation with address of the node where `CREATE_REQUEST` came from, together `[path_id]` and node address uniquely identify routing path segment
+* responds to the previous node with `CREATE_RESPONSE` command
 
 #### CREATE_RESPONSE
 Is sent as an answer to `CREATE_REQUEST`, is sent exactly once in response to each `CREATE_REQUEST`.
@@ -124,7 +124,7 @@ Where `[command_data_length]` bytes of `[command_data]` (not including MAC) also
 #### EXTEND_REQUEST command
 Is used in order to extend routing path one segment further, effectively generates `CREATE_REQUEST` to the next node.
 
-If `[path_id]` was previously extended to another node, that information MUST be forgotten and new extension MUST be performed.
+If `[path_id]` was previously extended to another node, that link between `[path_id]` of the previous node and `[path_id]` of the next node MUST be destroyed and new path extension MUST be performed.
 
 Request data:
 ```
@@ -133,8 +133,8 @@ Request data:
 
 Request data handling:
 * decrypt command and command data length
-* if command is `EXTEND_REQUEST`, then decrypt `[next_node_address]` and `[path_creation_request_data]` then send `CREATE_REQUEST` command to the `[next_node_address]` using new `[path_id]` for that segment
-* association between `[path_id]` of previous and next node MUST be remembered for future data forwarding
+* if command is `EXTEND_REQUEST`, then decrypt `[next_node_address]` and `[path_creation_request_data]` then send `CREATE_REQUEST` command to the `[next_node_address]` using newly generated `[path_id]` for that segment
+* `[path_id]` of the previous node and `[path_id]` of the next node MUST be linked together by protocol implementation for future data forwarding
 
 `CREATE_REQUEST` request data being sent:
 ```
@@ -167,9 +167,9 @@ No response is needed for this command, can be sent to nodes if unsure whether n
 After dropping the segment of the path, the last node left in path can be used to again extend path to another node.
 
 #### DATA command
-Is used when data SHOULD be accepted by application layer.
+Is used to actually transfer useful data between applications on different nodes.
 
-`DATA` command doesn't differentiate request from response, it just send data, application layer SHOULD take care of delivery confirmations if necessary.
+`DATA` command doesn't differentiate request from response, it just send data, application layer SHOULD also take care of delivery confirmations if necessary, since this is not done by protocol either.
 
 `DATA` command can be sent by:
 * initiator towards any node in the routing path, including responder
