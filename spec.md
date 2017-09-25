@@ -1,4 +1,4 @@
-Ronion version 0.0.5
+Ronion version 0.0.6
 
 ### Introduction
 This document is a textual specification of the Ronion anonymous routing protocol framework.
@@ -47,7 +47,7 @@ Exact value can be specified after data piece size separated by coma: `[data: 2,
 
 #### Packet format
 ```
-[version: 1][path_id: 2][request_data]
+[version: 1][path_id: 2][packet_data]
 ```
 
 `[version]` encapsulates address format, crypto algorithms used, set of commands and other important details used on that connection, supplied by application.

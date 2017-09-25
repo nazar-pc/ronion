@@ -6,10 +6,19 @@
  * @license   MIT License, see license.txt
  */
 (function(){
+  var asyncEventer, COMMAND_CREATE_REQUEST, COMMAND_CREATE_RESPONSE, COMMAND_EXTEND_REQUEST, COMMAND_EXTEND_RESPONSE, COMMAND_DESTROY, COMMAND_DATA, COMMANDS_PLAINTEXT, COMMANDS_ENCRYPTED;
+  asyncEventer = require('async-eventer');
   module.exports = {
-    Router: Router,
-    Circuit: Circuit
+    Router: Router
   };
+  COMMAND_CREATE_REQUEST = 1;
+  COMMAND_CREATE_RESPONSE = 2;
+  COMMAND_EXTEND_REQUEST = 3;
+  COMMAND_EXTEND_RESPONSE = 4;
+  COMMAND_DESTROY = 5;
+  COMMAND_DATA = 6;
+  COMMANDS_PLAINTEXT = new Set([COMMAND_CREATE_REQUEST, COMMAND_CREATE_RESPONSE]);
+  COMMANDS_ENCRYPTED = new Set([COMMAND_EXTEND_REQUEST, COMMAND_EXTEND_RESPONSE, COMMAND_DESTROY, COMMAND_DATA]);
   /**
    * @param {Uint8Array} array
    *
@@ -19,76 +28,87 @@
     return array.join('');
   }
   /**
+   * @param {Uint8Array} packet
+   *
+   * @return {array} [version: number, path_id: Uint8Array]
+   */
+  function parse_packet_header(packet){
+    return [packet[0], packet.subarray(1, 2)];
+  }
+  /**
+   * @param {Uint8Array} packet_data
+   *
+   * @return {number[]} [command, command_data_length]
+   */
+  function parse_packet_data_header(packet_data){
+    return [packet_data[0], packet_data[0] * 256 + packet_data[1]];
+  }
+  /**
+   * @param {Uint8Array} packet_data
+   *
+   * @return {array} [command: number, command_data: Uint8Array]
+   */
+  function parse_packet_data_plaintext(packet_data){
+    var ref$, command, command_data_length;
+    ref$ = parse_packet_data_header(packet_data), command = ref$[0], command_data_length = ref$[1];
+    return [command, packet_data.slice(3, 3 + command_data_length)];
+  }
+  /**
    * @constructor
    */
-  function Router(){
+  function Router(version, packet_size, address_length, mac_length){
     if (!(this instanceof Router)) {
-      return new Router;
+      return new Router(version, packet_size, address_length, mac_length);
     }
-    this.connections = {};
+    asyncEventer.call(this);
+    this._version = version;
+    this._packet_size = packet_size;
+    this._address_length = address_length;
+    this._mac_length = mac_length;
+    this._established_paths = new Set;
   }
   Router.prototype = {
     /**
-     * @param {Connection} connection
+     * @param {Uint8Array}	source_address	Address (in application-specific format) where packet came from
+     * @param {Uint8Array}	packet			Packet
      */
-    add_connection: function(connection){
-      var address;
-      address = to_string(connection.address);
-      this.connections[address] = connection.on('data', function(){}).on('close', this.remove_connection.bind(this, connection));
+    process_packet: function(source_address, packet){
+      var ref$, version, path_id, source_id, packet_data;
+      if (packet.length !== this._packet_size) {
+        return;
+      }
+      ref$ = parse_packet_header(packet), version = ref$[0], path_id = ref$[1];
+      if (version !== this._version) {
+        return;
+      }
+      source_id = to_string(source_address) + to_string(path_id);
+      packet_data = packet.subarray(3);
+      if (!this._established_paths.has(source_id)) {
+        this._process_packet_data_plaintext(source_id, packet_data);
+      } else {
+        this._process_packet_data_encrypted(source_id, packet_data);
+      }
     }
     /**
-     * @param {(Connection|Uint8Array)} address_or_connection
+     * @param {string}		source_id
+     * @param {Uint8Array}	packet_data
      */,
-    remove_connection: function(address_or_connection){
-      var address, key, ref$, value;
-      if (address_or_connection instanceof Uint8Array && in$(to_string(address_or_connection), this.connections)) {
-        address = to_string(address_or_connection);
-      } else {
-        for (key in ref$ = this.connections) {
-          value = ref$[key];
-          if (value === address_or_connection) {
-            address = key;
-          }
-        }
-        if (!address) {
-          throw new Error('Address or connection not found');
-        }
+    _process_packet_data_plaintext: function(source_id, packet_data){
+      var ref$, command, command_data;
+      ref$ = parse_packet_data_plaintext(packet_data), command = ref$[0], command_data = ref$[1];
+      if (!COMMANDS_PLAINTEXT.has(command) && !command_data.length) {
+        return;
       }
-      delete this.connections[address].onreceive;
-      delete this.connections[address].onclose;
-      delete this.connections[address];
     }
+    /**
+     * @param {string}		source_id
+     * @param {Uint8Array}	packet_data
+     */,
+    _process_packet_data_encrypted: function(source_id, packet_data){}
   };
+  Router.prototype = Object.assign(Object.create(asyncEventer.prototype), Router.prototype);
   Object.defineProperty(Router.prototype, 'constructor', {
     enumerable: false,
     value: Router
   });
-  /**
-   * @constructor
-   *
-   * @param {Connection}		entry_node_connection	Connection of the node where circuit starts
-   * @param {Uint8Array[]}	hops_addresses			Addresses of nodes after entry_node_connection to extend circuit through
-   * @param {number}			[max_hops]				Only useful if you want hide the actual number of hops from those who observe length of the packet
-   */
-  function Circuit(entry_node_connection, hops_addresses, max_hops){
-    max_hops == null && (max_hops = hops_addresses.length + 1);
-    if (!(this instanceof Circuit)) {
-      return new Circuit(entry_node_connection, hops_addresses, max_hops);
-    }
-    if (max_hops < hops_addresses.length + 1) {
-      throw new Error('Incorrect max_hops, should be more');
-    }
-  }
-  Circuit.prototype = {
-    destroy: function(){}
-  };
-  Object.defineProperty(Circuit.prototype, 'constructor', {
-    enumerable: false,
-    value: Circuit
-  });
-  function in$(x, xs){
-    var i = -1, l = xs.length >>> 0;
-    while (++i < l) if (x === xs[i]) return true;
-    return false;
-  }
 }).call(this);
