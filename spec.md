@@ -1,12 +1,10 @@
-Ronion version 0.0.2
-
-TODO:
-* add connection dropping command
-* document re-extending connection from specific node
+Ronion version 0.0.3
 
 ### Introduction
 This document is a textual specification of the Ronion anonymous routing protocol framework.
 The goal of this document is to give enough guidance to permit a complete and correct implementation of the protocol.
+
+The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED",  "MAY", and "OPTIONAL" in this document are to be interpreted as described in IETF [RFC 2119](http://www.ietf.org/rfc/rfc2119.txt).
 
 #### Glossary
 Initiator: the node that initiates communication.
@@ -15,7 +13,7 @@ Routing path: a sequence of nodes, represented by their addresses, that form a p
 Packet: set of bytes to be transferred from one node to another.
 
 #### Assumptions
-The only assumption about encryption algorithm used is that authenticated encryption is used (application should specify MAC length in bytes).
+The only assumption about encryption algorithm used is that authenticated encryption is used (application MUST specify MAC length in bytes).
 
 2 assumptions about transport layer used are:
 * it delivers data in the same order as the data were sent (think TCP instead of UDP)
@@ -35,7 +33,7 @@ Ronion depends heavily on application's decisions and tries to stay away from en
 All numbers are unsigned integers in big endian format.
 
 #### Address
-Address format is defined by application and should have constant length.
+Address format is defined by application and MUST have constant length.
 
 #### Encryption
 `{}` means data are encrypted (as the result of consuming `CREATE_REQUEST` and `CREATE_RESPONSE` and establishing corresponding encryption keys) and current node is capable of encrypting and/or decrypting it.
@@ -53,7 +51,7 @@ Exact value can be specified after data piece size separated by coma: `[data: 2,
 
 `[version]` encapsulates address format, crypto algorithms used, set of commands and other important details used on that connection, supplied by application.
 Version is kept the same on each hop of the same routing path and never changes in the middle of the routing path.
-`[path_ID]` is unique to each segment of the network, the response must always preserve `[path_ID]` of the request so that it is clear where to send it.
+`[path_ID]` is unique to each segment of the network, the response MUST always preserve `[path_ID]` of the request so that it is clear where to send it.
 
 #### Packet size
 Total packet size is fixed and configured by application, padding with random bytes is used when needed as described in corresponding sections.
@@ -64,7 +62,7 @@ It is responsibility of the application to carefully count how many bytes can be
 Is used at the end of the packet to fill it til packet size (so that all packets have the same size).
 
 #### Commands
-Commands explain what node should do with the packet it has received, supported commands are listed below.
+Commands explain what node MUST do with the packet it has received, supported commands are listed below.
 
 Each command is represented by number from the range `1..255`.
 The list of supported commands is given below, unused numbers are reserved for future versions of the specification:
@@ -75,8 +73,8 @@ The list of supported commands is given below, unused numbers are reserved for f
 | CREATE_RESPONSE | 2             |
 | EXTEND_REQUEST  | 3             |
 | EXTEND_RESPONSE | 4             |
-| DATA            | 5             |
-
+| DESTROY         | 5             |
+| DATA            | 6             |
 
 ### Routing path construction
 Routing path construction is started by initiator with sending `CREATE_REQUEST` command to the first node in routing path.
@@ -84,7 +82,7 @@ Then initiator sends `EXTEND_REQUEST` command to the first node in order to exte
 Initiator keeps sending `EXTEND_REQUEST` commands to the last node in path until last node in path is responder, at which point path is ready to send data back and forth.
 
 ### Plain text commands
-These commands are used prior to establishing path with specified `[path_ID]`, as soon as path is established only encrypted commands must be accepted
+These commands are used prior to establishing path with specified `[path_ID]`, as soon as path is established only encrypted commands MUST be accepted
 
 #### CREATE_REQUEST
 Is sent when creating segment of routing path is needed, can be send multiple times to the same node if multiple roundtrips are needed.
@@ -125,6 +123,8 @@ Where `[command_data_length]` bytes of `[command_data]` (not including MAC) also
 #### EXTEND_REQUEST command
 Is used in order to extend routing path one segment further, effectively generates `CREATE_REQUEST` to the next node.
 
+If `[path_ID]` was previously extended to another node, that information MUST be forgotten and new extension MUST be performed.
+
 Request data:
 ```
 {[command: 1, 3][address_and_path_creation_request_data_length: 2]}{[next_node_address][path_creation_request_data]}[random_bytes_padding]
@@ -132,7 +132,8 @@ Request data:
 
 Request data handling:
 * decrypt command and command data length
-* if command is `EXTEND_REQUEST`, then decrypt `[next_node_address]` and `[path_creation_request_data]` then send `CREATE_REQUEST` command to the `[next_node_address]`
+* if command is `EXTEND_REQUEST`, then decrypt `[next_node_address]` and `[path_creation_request_data]` then send `CREATE_REQUEST` command to the `[next_node_address]` using new `[path_ID]` for that segment
+* association between `[path_ID]` of previous and next node MUST be remembered for future data forwarding
 
 `CREATE_REQUEST` request data being sent:
 ```
@@ -144,7 +145,7 @@ Is used in order to extend routing path one segment further, effectively wraps `
 
 Response data:
 ```
-{[command][path_creation_response_data_length][path_creation_response_data]}[random_bytes_padding]
+{[command: 1, 4][path_creation_response_data_length][path_creation_response_data]}[random_bytes_padding]
 ```
 
 Where `[path_creation_response_data_length][path_creation_response_data]` part is taken from the beginning of the `CREATE_RESPONSE` data directly.
@@ -152,10 +153,22 @@ Where `[path_creation_response_data_length][path_creation_response_data]` part i
 Response data handling:
 * if `[path_creation_response_data_length]` has value `0`, it means that path creation has failed (can happen if node can't extend the path, for instance, when node with specified address doesn't exist)
 
-#### DATA command
-Is used when data should be accepted by application layer.
+#### DESTROY command
+Is used in order to destroy certain segment of the path. This command MUST always be sent to the last node in the path.
 
-`DATA` command doesn't differentiate request from response, it just send data, application layer should take care of delivery confirmations if necessary.
+Request data:
+```
+{[command: 1, 5][length: 2, 0]}[random_bytes_padding]
+```
+
+No response is needed for this command, can be sent to nodes if unsure whether node is still alive and will actually receive the message.
+
+After dropping the segment of the path, the last node left in path can be used to again extend path to another node.
+
+#### DATA command
+Is used when data SHOULD be accepted by application layer.
+
+`DATA` command doesn't differentiate request from response, it just send data, application layer SHOULD take care of delivery confirmations if necessary.
 
 `DATA` command can be sent by:
 * initiator towards any node in the routing path, including responder
@@ -163,7 +176,7 @@ Is used when data should be accepted by application layer.
 
 Request data:
 ```
-{[command: 1, 5][data_length: 2]}{[data]}[random_bytes_padding]
+{[command: 1, 6][data_length: 2]}{[data]}[random_bytes_padding]
 ```
 
 #### Data forwarding
