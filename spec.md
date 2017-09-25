@@ -1,4 +1,4 @@
-Ronion version 0.0.4
+Ronion version 0.0.5
 
 ### Introduction
 This document is a textual specification of the Ronion anonymous routing protocol framework.
@@ -25,7 +25,7 @@ The goals of this protocol framework are:
 * anonymizing the connection between initiator and responder so that nodes in routing path don't know who is initiator and who is responder
 * anonymizing the connection between initiator and responder so that responder doesn't know who initiator is and doesn't know its address
 * hiding exact number of intermediate nodes used from any node in routing path including responder as well as limited observer
-* hiding exact size and contents of the transmitted data sent from initiator to responder and backwards from any of the node in routing path as well as external observer
+* hiding exact size and contents of the transmitted data sent from initiator to responder and backwards from any of the node in routing path as well as global observer
 * allow application to use its own encryption algorithm, transport layer and data structures of the messages
 
 Ronion depends heavily on application's decisions and tries to stay away from enforcing implementation details as much as possible, while still providing easy to follow framework for building secure and anonymous communication.
@@ -47,12 +47,12 @@ Exact value can be specified after data piece size separated by coma: `[data: 2,
 
 #### Packet format
 ```
-[version: 1][path_ID: 2][request_data]
+[version: 1][path_id: 2][request_data]
 ```
 
 `[version]` encapsulates address format, crypto algorithms used, set of commands and other important details used on that connection, supplied by application.
 Version is kept the same on each hop of the same routing path and never changes in the middle of the routing path.
-`[path_ID]` is unique to each segment of the network, the response MUST always preserve `[path_ID]` of the request so that it is clear where to send it.
+`[path_id]` is unique to each segment of the network, the response MUST always preserve `[path_id]` of the request so that it is clear where to send it.
 
 #### Packet size
 Total packet size is fixed and configured by application, padding with random bytes is used when needed as described in corresponding sections.
@@ -83,7 +83,7 @@ Then initiator sends `EXTEND_REQUEST` command to the first node in order to exte
 Initiator keeps sending `EXTEND_REQUEST` commands to the last node in path until last node in path is responder, at which point path is ready to send data back and forth.
 
 ### Plain text commands
-These commands are used prior to establishing path with specified `[path_ID]`, as soon as path is established only encrypted commands MUST be accepted.
+These commands are used prior to establishing path with specified `[path_id]`, as soon as path is established only encrypted commands MUST be accepted.
 
 #### CREATE_REQUEST
 Is sent when creating segment of routing path is needed, can be send multiple times to the same node if multiple roundtrips are needed.
@@ -94,9 +94,9 @@ Request data:
 ```
 
 Request data handling:
-* only proceed if for `[path_ID]` path was not established yet, otherwise assume that contents is encrypted
+* only proceed if for `[path_id]` path was not established yet, otherwise assume that contents is encrypted
 * `[path_creation_request_data]` is consumed by the node in order to perform path creation
-* `[path_ID]` is stored by application and associated with connection where the request came from
+* `[path_id]` is stored by application and associated with connection where the request came from
 * responds to the previos node with `CREATE_RESPONSE` command
 
 #### CREATE_RESPONSE
@@ -112,7 +112,7 @@ Response data handling:
 * if current node has not initiated `CREATE_REQUEST`, but instead it `EXTEND_REQUEST` command was sent by another node, `EXTEND_RESPONSE` is generated in response
 
 ### Encrypted commands
-These commands are used after establishing path with specified `[path_ID]`.
+These commands are used after establishing path with specified `[path_id]`.
 
 Each encrypted command request data follows following pattern:
 ```
@@ -124,7 +124,7 @@ Where `[command_data_length]` bytes of `[command_data]` (not including MAC) also
 #### EXTEND_REQUEST command
 Is used in order to extend routing path one segment further, effectively generates `CREATE_REQUEST` to the next node.
 
-If `[path_ID]` was previously extended to another node, that information MUST be forgotten and new extension MUST be performed.
+If `[path_id]` was previously extended to another node, that information MUST be forgotten and new extension MUST be performed.
 
 Request data:
 ```
@@ -133,8 +133,8 @@ Request data:
 
 Request data handling:
 * decrypt command and command data length
-* if command is `EXTEND_REQUEST`, then decrypt `[next_node_address]` and `[path_creation_request_data]` then send `CREATE_REQUEST` command to the `[next_node_address]` using new `[path_ID]` for that segment
-* association between `[path_ID]` of previous and next node MUST be remembered for future data forwarding
+* if command is `EXTEND_REQUEST`, then decrypt `[next_node_address]` and `[path_creation_request_data]` then send `CREATE_REQUEST` command to the `[next_node_address]` using new `[path_id]` for that segment
+* association between `[path_id]` of previous and next node MUST be remembered for future data forwarding
 
 `CREATE_REQUEST` request data being sent:
 ```
@@ -198,5 +198,5 @@ Undecryptable or packets with non-existing command (just to stop data from movin
 Here is the list of things an application developer SHOULD consider in order to have secure and anonymous communication:
 * application MUST always use authenticated encryption
 * padding MUST always use random bytes and MUST NOT re-use the same random bytes again
-* initiator MUST use separate temporary keys for each node and each `[path_ID]` it communicates with and MUST never re-use the same keys for different nodes or different `[path_ID]` again
-* application on any node MIGHT want to send fake packets, apply custom delays between sending packets and forward packets from independent `[path_ID]` in different order than they have come to the node in order to confuse an observer
+* initiator MUST use separate temporary keys for each node and each `[path_id]` it communicates with and MUST never re-use the same keys for different nodes or different `[path_id]` again
+* application on any node MIGHT want to send fake packets, apply custom delays between sending packets and forward packets from independent `[path_id]` in different order than they have come to the node in order to confuse an observer
