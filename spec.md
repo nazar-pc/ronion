@@ -1,4 +1,4 @@
-Ronion version 0.0.3
+Ronion version 0.0.4
 
 ### Introduction
 This document is a textual specification of the Ronion anonymous routing protocol framework.
@@ -7,10 +7,11 @@ The goal of this document is to give enough guidance to permit a complete and co
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED",  "MAY", and "OPTIONAL" in this document are to be interpreted as described in IETF [RFC 2119](http://www.ietf.org/rfc/rfc2119.txt).
 
 #### Glossary
-Initiator: the node that initiates communication.
-Responder: the node with which initiator wants to communicate with.
-Routing path: a sequence of nodes, represented by their addresses, that form a path through which initiator and responder are connected.
-Packet: set of bytes to be transferred from one node to another.
+* Initiator: the node that initiates communication
+* Responder: the node with which initiator wants to communicate with
+* Routing path: a sequence of nodes, represented by their addresses, that form a path through which initiator and responder are connected
+* Packet: set of bytes to be transferred from one node to another
+* Application: software that uses implementation of this protocol
 
 #### Assumptions
 The only assumption about encryption algorithm used is that authenticated encryption is used (application MUST specify MAC length in bytes).
@@ -82,7 +83,7 @@ Then initiator sends `EXTEND_REQUEST` command to the first node in order to exte
 Initiator keeps sending `EXTEND_REQUEST` commands to the last node in path until last node in path is responder, at which point path is ready to send data back and forth.
 
 ### Plain text commands
-These commands are used prior to establishing path with specified `[path_ID]`, as soon as path is established only encrypted commands MUST be accepted
+These commands are used prior to establishing path with specified `[path_ID]`, as soon as path is established only encrypted commands MUST be accepted.
 
 #### CREATE_REQUEST
 Is sent when creating segment of routing path is needed, can be send multiple times to the same node if multiple roundtrips are needed.
@@ -192,3 +193,10 @@ The order in which keys are selected is up to the application or implementation,
 If packets were forwarded through the whole path and the last node (either initiator or responder) still can't decrypt the packet, the packet is silently dropped.
 If packet is decrypted successfully, but command is unknown, the packet is silently dropped.
 Undecryptable or packets with non-existing command (just to stop data from moving to the next node) can be used to generate fake activity.
+
+### Security and anonymity considerations for an application developer
+Here is the list of things an application developer SHOULD consider in order to have secure and anonymous communication:
+* application MUST always use authenticated encryption
+* padding MUST always use random bytes and MUST NOT re-use the same random bytes again
+* initiator MUST use separate temporary keys for each node and each `[path_ID]` it communicates with and MUST never re-use the same keys for different nodes or different `[path_ID]` again
+* application on any node MIGHT want to send fake packets, apply custom delays between sending packets and forward packets from independent `[path_ID]` in different order than they have come to the node in order to confuse an observer
