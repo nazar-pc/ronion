@@ -9,9 +9,7 @@
   var asyncEventer, randombytes, COMMAND_CREATE_REQUEST, COMMAND_CREATE_RESPONSE, COMMAND_EXTEND_REQUEST, COMMAND_EXTEND_RESPONSE, COMMAND_DESTROY, COMMAND_DATA;
   asyncEventer = require('async-eventer');
   randombytes = require('randombytes');
-  module.exports = {
-    Router: Router
-  };
+  module.exports = Ronion;
   COMMAND_CREATE_REQUEST = 1;
   COMMAND_CREATE_RESPONSE = 2;
   COMMAND_EXTEND_REQUEST = 3;
@@ -105,9 +103,9 @@
    * @param {number}	address_length
    * @param {number}	mac_length
    */
-  function Router(version, packet_size, address_length, mac_length){
-    if (!(this instanceof Router)) {
-      return new Router(version, packet_size, address_length, mac_length);
+  function Ronion(version, packet_size, address_length, mac_length){
+    if (!(this instanceof Ronion)) {
+      return new Ronion(version, packet_size, address_length, mac_length);
     }
     asyncEventer.call(this);
     this._version = version;
@@ -116,7 +114,7 @@
     this._mac_length = mac_length;
     this._established_segments = new Set;
   }
-  Router.prototype = {
+  Ronion.prototype = {
     /**
      * Must be called when new packet appear
      *
@@ -234,18 +232,32 @@
           plaintext: null
         };
         this$.fire('decrypt', data).then(function(){
-          var plaintext;
-          plaintext = data.plaintext;
-          if (!(plaintext instanceof Uint8Array) && plaintext.length !== command_data_length) {
+          var command_data;
+          command_data = data.plaintext;
+          if (!(command_data instanceof Uint8Array) && command_data.length !== command_data_length) {
             return;
+          }
+          switch (command) {
+          case COMMAND_EXTEND_REQUEST:
+            break;
+          case COMMAND_EXTEND_RESPONSE:
+            break;
+          case COMMAND_DESTROY:
+            break;
+          case COMMAND_DATA:
+            this$.fire('data', {
+              address: address,
+              segment_id: segment_id,
+              data: command_data
+            });
           }
         });
       });
     }
   };
-  Router.prototype = Object.assign(Object.create(asyncEventer.prototype), Router.prototype);
-  Object.defineProperty(Router.prototype, 'constructor', {
+  Ronion.prototype = Object.assign(Object.create(asyncEventer.prototype), Ronion.prototype);
+  Object.defineProperty(Ronion.prototype, 'constructor', {
     enumerable: false,
-    value: Router
+    value: Ronion
   });
 }).call(this);

@@ -7,7 +7,7 @@
 async-eventer	= require('async-eventer')
 randombytes		= require('randombytes')
 
-module.exports = {Router/*, Circuit*/}
+module.exports = Ronion
 
 const COMMAND_CREATE_REQUEST	= 1
 const COMMAND_CREATE_RESPONSE	= 2
@@ -102,9 +102,9 @@ function compute_source_id (address, segment_id)
  * @param {number}	address_length
  * @param {number}	mac_length
  */
-!function Router (version, packet_size, address_length, mac_length)
-	if !(@ instanceof Router)
-		return new Router(version, packet_size, address_length, mac_length)
+!function Ronion (version, packet_size, address_length, mac_length)
+	if !(@ instanceof Ronion)
+		return new Ronion(version, packet_size, address_length, mac_length)
 	async-eventer.call(@)
 
 	@_version				= version
@@ -113,7 +113,7 @@ function compute_source_id (address, segment_id)
 	@_mac_length			= mac_length
 	@_established_segments	= new Set
 
-Router:: =
+Ronion:: =
 	/**
 	 * Must be called when new packet appear
 	 *
@@ -203,32 +203,23 @@ Router:: =
 			ciphertext	: command_data_encrypted
 			plaintext	: null
 		<~! @fire('decrypt', data).then
-		plaintext	= data.plaintext
+		command_data	= data.plaintext
 		# Do nothing if decryption failed
-		if !(plaintext instanceof Uint8Array) && plaintext.length != command_data_length
+		if !(command_data instanceof Uint8Array) && command_data.length != command_data_length
 			return
-		# TODO: handle encrypted commands
+		switch command
+			case COMMAND_EXTEND_REQUEST
+				# TODO
+				void
+			case COMMAND_EXTEND_RESPONSE
+				# TODO
+				void
+			case COMMAND_DESTROY
+				# TODO
+				void
+			case COMMAND_DATA
+				@fire('data', {address, segment_id, data : command_data})
 
-Router:: = Object.assign(Object.create(async-eventer::), Router::)
+Ronion:: = Object.assign(Object.create(async-eventer::), Ronion::)
 
-Object.defineProperty(Router::, 'constructor', {enumerable: false, value: Router})
-
-#/**
-# * @constructor
-# *
-# * @param {Connection}		entry_node_connection	Connection of the node where circuit starts
-# * @param {Uint8Array[]}	hops_addresses			Addresses of nodes after entry_node_connection to extend circuit through
-# * @param {number}			[max_hops]				Only useful if you want hide the actual number of hops from those who observe length of the packet
-# */
-#!function Circuit (entry_node_connection, hops_addresses, max_hops = hops_addresses.length + 1)
-#	if !(@ instanceof Circuit)
-#		return new Circuit(entry_node_connection, hops_addresses, max_hops)
-#	if max_hops < (hops_addresses.length + 1)
-#		throw new Error('Incorrect max_hops, should be more')
-#	# TODO: Circuit creation
-#
-#Circuit:: =
-#	destroy	: !->
-#		#TODO
-#
-#Object.defineProperty(Circuit::, 'constructor', {enumerable: false, value: Circuit})
+Object.defineProperty(Ronion::, 'constructor', {enumerable: false, value: Ronion})
