@@ -170,18 +170,44 @@ Router:: =
 	 * @param {Uint8Array}	packet_data
 	 */
 	_process_packet_data_plaintext : (address, segment_id, packet_data) !->
-		[command, data]	= parse_packet_data_plaintext(packet_data)
+		[command, command_data]	= parse_packet_data_plaintext(packet_data)
 		switch command
 			case COMMAND_CREATE_REQUEST
-				@fire('create_request', {address, segment_id, data})
+				@fire('create_request', {address, segment_id, data : command_data})
 			case COMMAND_CREATE_RESPONSE
-				@fire('create_response', {address, segment_id, data})
+				# TODO: separate plaintext handling in response to CREATE_REQUEST by the node itself from CREATE_REQUEST that was sent because of EXTEND_REQUEST
+				@fire('create_response', {address, segment_id, data : command_data})
 	/**
-	 * @param {string}		source_id
+	 * @param {Uint8Array}	address
+	 * @param {Uint8Array}	segment_id
 	 * @param {Uint8Array}	packet_data
 	 */
-	_process_packet_data_encrypted : (source_id, packet_data) !->
-		# TODO: everything
+	_process_packet_data_encrypted : (address, segment_id, packet_data) !->
+		# Packet data header size + MAC
+		packet_data_header_encrypted	= packet_data.slice(0, 3 + @_mac_length)
+		data							=
+			address		: address
+			segment_id	: segment_id
+			ciphertext	: packet_data_header_encrypted
+			plaintext	: null
+		<~! @fire('decrypt', data).then
+		plaintext	= data.plaintext
+		# Do nothing if decryption failed
+		if !(plaintext instanceof Uint8Array) && plaintext.length != 3
+			return
+		[command, command_data_length]	= parse_packet_data_header(plaintext)
+		command_data_encrypted			= packet_data.slice(packet_data_header_encrypted.length, packet_data_header_encrypted.length + command_data_length)
+		data							:=
+			address		: address
+			segment_id	: segment_id
+			ciphertext	: command_data_encrypted
+			plaintext	: null
+		<~! @fire('decrypt', data).then
+		plaintext	= data.plaintext
+		# Do nothing if decryption failed
+		if !(plaintext instanceof Uint8Array) && plaintext.length != command_data_length
+			return
+		# TODO: handle encrypted commands
 
 Router:: = Object.assign(Object.create(async-eventer::), Router::)
 

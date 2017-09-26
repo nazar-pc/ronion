@@ -1,6 +1,6 @@
 # Ronion anonymous routing protocol framework specification
 
-Specification version: 0.0.8
+Specification version: 0.0.9
 
 Author: Nazar Mokrynskyi
 
@@ -144,7 +144,7 @@ Request data handling:
 
 `CREATE_REQUEST` request data being sent:
 ```
-[command: 1, 4][segment_creation_request_data_length: 2][segment_creation_request_data: segment_creation_request_data_length][random_bytes_padding]
+[command: 1, 1][segment_creation_request_data_length: 2][segment_creation_request_data: segment_creation_request_data_length][random_bytes_padding]
 ```
 
 #### EXTEND_RESPONSE command
@@ -152,10 +152,10 @@ Is used in order to extend routing path one segment further, effectively wraps `
 
 Response data:
 ```
-{[command: 1, 4][segment_creation_response_data_length][segment_creation_response_data]}[random_bytes_padding]
+{[command: 1, 4][segment_creation_response_data_length]}{[segment_creation_response_data]}[random_bytes_padding]
 ```
 
-Where `[segment_creation_response_data_length][segment_creation_response_data]` part is taken from the beginning of the `CREATE_RESPONSE` data directly.
+Where `[segment_creation_response_data_length]` and `[segment_creation_response_data]` parts are taken from `CREATE_RESPONSE` data directly (which were sent in response to `CREATE_REQUEST`)`.
 
 Response data handling:
 * if `[segment_creation_response_data_length]` has value `0`, it means that routing path creation has failed (can happen if node can't extend the routing path, for instance, when node with specified address doesn't exist)

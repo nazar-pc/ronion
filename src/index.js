@@ -187,29 +187,61 @@
      * @param {Uint8Array}	packet_data
      */,
     _process_packet_data_plaintext: function(address, segment_id, packet_data){
-      var ref$, command, data;
-      ref$ = parse_packet_data_plaintext(packet_data), command = ref$[0], data = ref$[1];
+      var ref$, command, command_data;
+      ref$ = parse_packet_data_plaintext(packet_data), command = ref$[0], command_data = ref$[1];
       switch (command) {
       case COMMAND_CREATE_REQUEST:
         this.fire('create_request', {
           address: address,
           segment_id: segment_id,
-          data: data
+          data: command_data
         });
         break;
       case COMMAND_CREATE_RESPONSE:
         this.fire('create_response', {
           address: address,
           segment_id: segment_id,
-          data: data
+          data: command_data
         });
       }
     }
     /**
-     * @param {string}		source_id
+     * @param {Uint8Array}	address
+     * @param {Uint8Array}	segment_id
      * @param {Uint8Array}	packet_data
      */,
-    _process_packet_data_encrypted: function(source_id, packet_data){}
+    _process_packet_data_encrypted: function(address, segment_id, packet_data){
+      var packet_data_header_encrypted, data, this$ = this;
+      packet_data_header_encrypted = packet_data.slice(0, 3 + this._mac_length);
+      data = {
+        address: address,
+        segment_id: segment_id,
+        ciphertext: packet_data_header_encrypted,
+        plaintext: null
+      };
+      this.fire('decrypt', data).then(function(){
+        var plaintext, ref$, command, command_data_length, command_data_encrypted;
+        plaintext = data.plaintext;
+        if (!(plaintext instanceof Uint8Array) && plaintext.length !== 3) {
+          return;
+        }
+        ref$ = parse_packet_data_header(plaintext), command = ref$[0], command_data_length = ref$[1];
+        command_data_encrypted = packet_data.slice(packet_data_header_encrypted.length, packet_data_header_encrypted.length + command_data_length);
+        data = {
+          address: address,
+          segment_id: segment_id,
+          ciphertext: command_data_encrypted,
+          plaintext: null
+        };
+        this$.fire('decrypt', data).then(function(){
+          var plaintext;
+          plaintext = data.plaintext;
+          if (!(plaintext instanceof Uint8Array) && plaintext.length !== command_data_length) {
+            return;
+          }
+        });
+      });
+    }
   };
   Router.prototype = Object.assign(Object.create(asyncEventer.prototype), Router.prototype);
   Object.defineProperty(Router.prototype, 'constructor', {
