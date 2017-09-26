@@ -5,6 +5,7 @@
  * @license   MIT License, see license.txt
  */
 async-eventer	= require('async-eventer')
+randombytes		= require('randombytes')
 
 module.exports = {Router/*, Circuit*/}
 
@@ -14,8 +15,6 @@ const COMMAND_EXTEND_REQUEST	= 3
 const COMMAND_EXTEND_RESPONSE	= 4
 const COMMAND_DESTROY			= 5
 const COMMAND_DATA				= 6
-const COMMANDS_PLAINTEXT		= new Set([COMMAND_CREATE_REQUEST, COMMAND_CREATE_RESPONSE])
-const COMMANDS_ENCRYPTED		= new Set([COMMAND_EXTEND_REQUEST, COMMAND_EXTEND_RESPONSE, COMMAND_DESTROY, COMMAND_DATA])
 
 /**
  * @param {Uint8Array} array
@@ -40,8 +39,8 @@ function parse_packet_header (packet)
  * @return {number[]} [command, command_data_length]
  */
 function parse_packet_data_header (packet_data)
-	# First byte is command, next 2 bytes are unsigned integer in big endian format
-	[packet_data[0], packet_data[0]*256 + packet_data[1]]
+	# First byte is command, next 2 bytes are command data length as unsigned integer in big endian format
+	[packet_data[0], packet_data[0] * 256 + packet_data[1]]
 
 /**
  * @param {Uint8Array} packet_data
@@ -53,7 +52,52 @@ function parse_packet_data_plaintext (packet_data)
 	[command, packet_data.slice(3, 3 + command_data_length)]
 
 /**
+ * @param {number}		packet_size
+ * @param {number}		version
+ * @param {Uint8Array}	segment_id
+ * @param {Uint8Array}	packet_data
+ *
+ * @return {Uint8Array}
+ */
+function generate_packet_plaintext (packet_size, version, segment_id, packet_data)
+	packet	= new Uint8Array(packet_size)
+		..set([version])
+		..set(segment_id, 1)
+		..set(packet_data, 3)
+	bytes_written				= 3 + packet_data.length
+	random_bytes_padding_length	= packet_size - bytes_written
+	if random_bytes_padding_length
+		packet.set(randombytes(random_bytes_padding_length), bytes_written)
+	packet
+
+/**
+ * @param {number}	command
+ * @param {number}	command_data_length
+ *
+ * @return {Uint8Array}
+ */
+function generate_packet_data_header (command, command_data_length)
+	# First byte is command, next 2 bytes are command data length as unsigned integer in big endian format
+	lsb	= command_data_length % 256
+	msb	= (command_data_length - lsb) / 256
+	Uint8Array.of(command, msb, lsb)
+
+/**
+ * @param {Uint8Array}	source_address
+ * @param {Uint8Array}	segment_id
+ *
+ * @return {string}
+ */
+function compute_source_id (source_address, segment_id)
+	to_string(source_address) + to_string(segment_id)
+
+/**
  * @constructor
+ *
+ * @param {number}	version			0..255
+ * @param {number}	packet_size
+ * @param {number}	address_length
+ * @param {number}	mac_length
  */
 !function Router (version, packet_size, address_length, mac_length)
 	if !(@ instanceof Router)
@@ -68,34 +112,56 @@ function parse_packet_data_plaintext (packet_data)
 
 Router:: =
 	/**
+	 * Must be called when new packet appear
+	 *
 	 * @param {Uint8Array}	source_address	Address (in application-specific format) where packet came from
 	 * @param {Uint8Array}	packet			Packet
 	 */
 	process_packet : (source_address, packet) !->
-		# Do nothing if packet size is incorrect
-		if packet.length != @_packet_size
+		# Do nothing if packet or its size is incorrect
+		if !(packet instanceof Uint8Array) || packet.length != @_packet_size
 			return
 		[version, segment_id]	= parse_packet_header(packet)
 		# Do nothing the version is unsupported
 		if version != @_version
 			return
-		source_id	= to_string(source_address) + to_string(segment_id)
+		source_id	= compute_source_id(source_address, segment_id)
 		packet_data	= packet.subarray(3)
-		# If path is not established then we don't use encryption yet
-		if !@_established_paths.has(source_id)
-			@_process_packet_data_plaintext(source_id, packet_data)
+		# If segment is not established then we don't use encryption yet
+		if !@_established_segments.has(source_id)
+			@_process_packet_data_plaintext(source_address, segment_id, packet_data)
 		else
 			@_process_packet_data_encrypted(source_id, packet_data)
 	/**
-	 * @param {string}		source_id
+	 * Must be called when new segment is established with node that has specified address
+	 *
+	 * @param {Uint8Array}	source_address
+	 * @param {Uint8Array}	segment_id
+	 */
+	confirm_established_segment : (source_address, segment_id) !->
+		source_id	= compute_source_id(source_address, segment_id)
+		@_established_segments.add(source_id)
+	/**
+	 * @param {Uint8Array}	source_address
+	 * @param {Uint8Array}	segment_id
 	 * @param {Uint8Array}	packet_data
 	 */
-	_process_packet_data_plaintext : (source_id, packet_data) !->
-		[command, command_data]	= parse_packet_data_plaintext(packet_data)
-		# Do nothing if command is unknown or there is no data
-		if !COMMANDS_PLAINTEXT.has(command) && !command_data.length
-			return
-		# TODO: handle data
+	_process_packet_data_plaintext : (source_address, segment_id, packet_data) !->
+		[command, request]	= parse_packet_data_plaintext(packet_data)
+		switch command
+			case COMMAND_CREATE_REQUEST
+				data	= {source_address, segment_id, request, response : null}
+				@fire('create_request', data).then !~>
+					response	= data.response
+					# Do nothing if response was not generated
+					if !(response instanceof Uint8Array)
+						return
+					packet_data_header	= generate_packet_data_header(COMMAND_CREATE_RESPONSE, response.length)
+					response_packet		= generate_packet_plaintext(@_packet_size, @_version, segment_id, response)
+					@fire('send', {source_address, response : response_packet})
+			case COMMAND_CREATE_RESPONSE
+				# TODO
+				void
 	/**
 	 * @param {string}		source_id
 	 * @param {Uint8Array}	packet_data

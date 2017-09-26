@@ -6,8 +6,9 @@
  * @license   MIT License, see license.txt
  */
 (function(){
-  var asyncEventer, COMMAND_CREATE_REQUEST, COMMAND_CREATE_RESPONSE, COMMAND_EXTEND_REQUEST, COMMAND_EXTEND_RESPONSE, COMMAND_DESTROY, COMMAND_DATA, COMMANDS_PLAINTEXT, COMMANDS_ENCRYPTED;
+  var asyncEventer, randombytes, COMMAND_CREATE_REQUEST, COMMAND_CREATE_RESPONSE, COMMAND_EXTEND_REQUEST, COMMAND_EXTEND_RESPONSE, COMMAND_DESTROY, COMMAND_DATA;
   asyncEventer = require('async-eventer');
+  randombytes = require('randombytes');
   module.exports = {
     Router: Router
   };
@@ -17,8 +18,6 @@
   COMMAND_EXTEND_RESPONSE = 4;
   COMMAND_DESTROY = 5;
   COMMAND_DATA = 6;
-  COMMANDS_PLAINTEXT = new Set([COMMAND_CREATE_REQUEST, COMMAND_CREATE_RESPONSE]);
-  COMMANDS_ENCRYPTED = new Set([COMMAND_EXTEND_REQUEST, COMMAND_EXTEND_RESPONSE, COMMAND_DESTROY, COMMAND_DATA]);
   /**
    * @param {Uint8Array} array
    *
@@ -54,7 +53,54 @@
     return [command, packet_data.slice(3, 3 + command_data_length)];
   }
   /**
+   * @param {number}		packet_size
+   * @param {number}		version
+   * @param {Uint8Array}	segment_id
+   * @param {Uint8Array}	packet_data
+   *
+   * @return {Uint8Array}
+   */
+  function generate_packet_plaintext(packet_size, version, segment_id, packet_data){
+    var x$, packet, bytes_written, random_bytes_padding_length;
+    x$ = packet = new Uint8Array(packet_size);
+    x$.set([version]);
+    x$.set(segment_id, 1);
+    x$.set(packet_data, 3);
+    bytes_written = 3 + packet_data.length;
+    random_bytes_padding_length = packet_size - bytes_written;
+    if (random_bytes_padding_length) {
+      packet.set(randombytes(random_bytes_padding_length), bytes_written);
+    }
+    return packet;
+  }
+  /**
+   * @param {number}	command
+   * @param {number}	command_data_length
+   *
+   * @return {Uint8Array}
+   */
+  function generate_packet_data_header(command, command_data_length){
+    var lsb, msb;
+    lsb = command_data_length % 256;
+    msb = (command_data_length - lsb) / 256;
+    return Uint8Array.of(command, msb, lsb);
+  }
+  /**
+   * @param {Uint8Array}	source_address
+   * @param {Uint8Array}	segment_id
+   *
+   * @return {string}
+   */
+  function compute_source_id(source_address, segment_id){
+    return to_string(source_address) + to_string(segment_id);
+  }
+  /**
    * @constructor
+   *
+   * @param {number}	version			0..255
+   * @param {number}	packet_size
+   * @param {number}	address_length
+   * @param {number}	mac_length
    */
   function Router(version, packet_size, address_length, mac_length){
     if (!(this instanceof Router)) {
@@ -69,35 +115,70 @@
   }
   Router.prototype = {
     /**
+     * Must be called when new packet appear
+     *
      * @param {Uint8Array}	source_address	Address (in application-specific format) where packet came from
      * @param {Uint8Array}	packet			Packet
      */
     process_packet: function(source_address, packet){
       var ref$, version, segment_id, source_id, packet_data;
-      if (packet.length !== this._packet_size) {
+      if (!(packet instanceof Uint8Array) || packet.length !== this._packet_size) {
         return;
       }
       ref$ = parse_packet_header(packet), version = ref$[0], segment_id = ref$[1];
       if (version !== this._version) {
         return;
       }
-      source_id = to_string(source_address) + to_string(segment_id);
+      source_id = compute_source_id(source_address, segment_id);
       packet_data = packet.subarray(3);
-      if (!this._established_paths.has(source_id)) {
-        this._process_packet_data_plaintext(source_id, packet_data);
+      if (!this._established_segments.has(source_id)) {
+        this._process_packet_data_plaintext(source_address, segment_id, packet_data);
       } else {
         this._process_packet_data_encrypted(source_id, packet_data);
       }
     }
     /**
-     * @param {string}		source_id
+     * Must be called when new segment is established with node that has specified address
+     *
+     * @param {Uint8Array}	source_address
+     * @param {Uint8Array}	segment_id
+     */,
+    confirm_established_segment: function(source_address, segment_id){
+      var source_id;
+      source_id = compute_source_id(source_address, segment_id);
+      this._established_segments.add(source_id);
+    }
+    /**
+     * @param {Uint8Array}	source_address
+     * @param {Uint8Array}	segment_id
      * @param {Uint8Array}	packet_data
      */,
-    _process_packet_data_plaintext: function(source_id, packet_data){
-      var ref$, command, command_data;
-      ref$ = parse_packet_data_plaintext(packet_data), command = ref$[0], command_data = ref$[1];
-      if (!COMMANDS_PLAINTEXT.has(command) && !command_data.length) {
-        return;
+    _process_packet_data_plaintext: function(source_address, segment_id, packet_data){
+      var ref$, command, request, data, this$ = this;
+      ref$ = parse_packet_data_plaintext(packet_data), command = ref$[0], request = ref$[1];
+      switch (command) {
+      case COMMAND_CREATE_REQUEST:
+        data = {
+          source_address: source_address,
+          segment_id: segment_id,
+          request: request,
+          response: null
+        };
+        this.fire('create_request', data).then(function(){
+          var response, packet_data_header, response_packet;
+          response = data.response;
+          if (!(response instanceof Uint8Array)) {
+            return;
+          }
+          packet_data_header = generate_packet_data_header(COMMAND_CREATE_RESPONSE, response.length);
+          response_packet = generate_packet_plaintext(this$._packet_size, this$._version, segment_id, response);
+          this$.fire('send', {
+            source_address: source_address,
+            response: response_packet
+          });
+        });
+        break;
+      case COMMAND_CREATE_RESPONSE:
       }
     }
     /**
