@@ -55,16 +55,19 @@ function parse_packet_data_plaintext (packet_data)
  * @param {number}		packet_size
  * @param {number}		version
  * @param {Uint8Array}	segment_id
- * @param {Uint8Array}	packet_data
+ * @param {number}		command
+ * @param {Uint8Array}	command_data
  *
  * @return {Uint8Array}
  */
-function generate_packet_plaintext (packet_size, version, segment_id, packet_data)
+function generate_packet_plaintext (packet_size, version, segment_id, command, command_data)
+	packet_data_header	= generate_packet_data_header(command, command_data.length)
 	packet	= new Uint8Array(packet_size)
 		..set([version])
 		..set(segment_id, 1)
-		..set(packet_data, 3)
-	bytes_written				= 3 + packet_data.length
+		..set(packet_data_header, 3)
+		..set(command_data, 6)
+	bytes_written				= 6 + command_data.length
 	random_bytes_padding_length	= packet_size - bytes_written
 	if random_bytes_padding_length
 		packet.set(randombytes(random_bytes_padding_length), bytes_written)
@@ -83,13 +86,13 @@ function generate_packet_data_header (command, command_data_length)
 	Uint8Array.of(command, msb, lsb)
 
 /**
- * @param {Uint8Array}	source_address
+ * @param {Uint8Array}	address
  * @param {Uint8Array}	segment_id
  *
  * @return {string}
  */
-function compute_source_id (source_address, segment_id)
-	to_string(source_address) + to_string(segment_id)
+function compute_source_id (address, segment_id)
+	to_string(address) + to_string(segment_id)
 
 /**
  * @constructor
@@ -114,54 +117,65 @@ Router:: =
 	/**
 	 * Must be called when new packet appear
 	 *
-	 * @param {Uint8Array}	source_address	Address (in application-specific format) where packet came from
-	 * @param {Uint8Array}	packet			Packet
+	 * @param {Uint8Array}	address	Address (in application-specific format) where packet came from
+	 * @param {Uint8Array}	packet	Packet
 	 */
-	process_packet : (source_address, packet) !->
+	process_packet : (address, packet) !->
 		# Do nothing if packet or its size is incorrect
-		if !(packet instanceof Uint8Array) || packet.length != @_packet_size
+		if packet.length != @_packet_size
 			return
 		[version, segment_id]	= parse_packet_header(packet)
 		# Do nothing the version is unsupported
 		if version != @_version
 			return
-		source_id	= compute_source_id(source_address, segment_id)
+		source_id	= compute_source_id(address, segment_id)
 		packet_data	= packet.subarray(3)
 		# If segment is not established then we don't use encryption yet
 		if !@_established_segments.has(source_id)
-			@_process_packet_data_plaintext(source_address, segment_id, packet_data)
+			@_process_packet_data_plaintext(address, segment_id, packet_data)
 		else
 			@_process_packet_data_encrypted(source_id, packet_data)
 	/**
 	 * Must be called when new segment is established with node that has specified address
 	 *
-	 * @param {Uint8Array}	source_address
+	 * @param {Uint8Array}	address
 	 * @param {Uint8Array}	segment_id
 	 */
-	confirm_established_segment : (source_address, segment_id) !->
-		source_id	= compute_source_id(source_address, segment_id)
+	confirm_established_segment : (address, segment_id) !->
+		source_id	= compute_source_id(address, segment_id)
 		@_established_segments.add(source_id)
 	/**
-	 * @param {Uint8Array}	source_address
+	 * Must be called in order to start new routing path, sends CREATE_REQUEST
+	 *
+	 * @param {Uint8Array}	address		Node at which to start routing path
+	 * @param {Uint8Array}	segment_id	Unique segment ID for specified address
+	 * @param {Uint8Array}	data
+	 */
+	create_request : (address, segment_id, data) !->
+		packet	= generate_packet_plaintext(@_packet_size, @_version, segment_id, COMMAND_CREATE_REQUEST, data)
+		@fire('send', {address, packet})
+	/**
+	 * Must be called in order to respond to CREATE_RESPONSE
+	 *
+	 * @param {Uint8Array}	address		Node from which CREATE_REQUEST come from
+	 * @param {Uint8Array}	segment_id	Same segment ID as in CREATE_REQUEST
+	 * @param {Uint8Array}	data
+	 */
+	create_response : (address, segment_id, data) !->
+		packet	= generate_packet_plaintext(@_packet_size, @_version, segment_id, COMMAND_CREATE_RESPONSE, data)
+		@fire('send', {address, packet})
+	/**
+	 * @param {Uint8Array}	address
 	 * @param {Uint8Array}	segment_id
 	 * @param {Uint8Array}	packet_data
 	 */
-	_process_packet_data_plaintext : (source_address, segment_id, packet_data) !->
-		[command, request]	= parse_packet_data_plaintext(packet_data)
+	_process_packet_data_plaintext : (address, segment_id, packet_data) !->
+		[command, data]	= parse_packet_data_plaintext(packet_data)
 		switch command
 			case COMMAND_CREATE_REQUEST
-				data	= {source_address, segment_id, request, response : null}
-				@fire('create_request', data).then !~>
-					response	= data.response
-					# Do nothing if response was not generated
-					if !(response instanceof Uint8Array)
-						return
-					packet_data_header	= generate_packet_data_header(COMMAND_CREATE_RESPONSE, response.length)
-					response_packet		= generate_packet_plaintext(@_packet_size, @_version, segment_id, response)
-					@fire('send', {source_address, response : response_packet})
+				@fire('create_request', {address, segment_id, data})
 			case COMMAND_CREATE_RESPONSE
-				# TODO
-				void
+				@fire('create_response', {address, segment_id, data})
 	/**
 	 * @param {string}		source_id
 	 * @param {Uint8Array}	packet_data

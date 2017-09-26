@@ -56,17 +56,20 @@
    * @param {number}		packet_size
    * @param {number}		version
    * @param {Uint8Array}	segment_id
-   * @param {Uint8Array}	packet_data
+   * @param {number}		command
+   * @param {Uint8Array}	command_data
    *
    * @return {Uint8Array}
    */
-  function generate_packet_plaintext(packet_size, version, segment_id, packet_data){
-    var x$, packet, bytes_written, random_bytes_padding_length;
+  function generate_packet_plaintext(packet_size, version, segment_id, command, command_data){
+    var packet_data_header, x$, packet, bytes_written, random_bytes_padding_length;
+    packet_data_header = generate_packet_data_header(command, command_data.length);
     x$ = packet = new Uint8Array(packet_size);
     x$.set([version]);
     x$.set(segment_id, 1);
-    x$.set(packet_data, 3);
-    bytes_written = 3 + packet_data.length;
+    x$.set(packet_data_header, 3);
+    x$.set(command_data, 6);
+    bytes_written = 6 + command_data.length;
     random_bytes_padding_length = packet_size - bytes_written;
     if (random_bytes_padding_length) {
       packet.set(randombytes(random_bytes_padding_length), bytes_written);
@@ -86,13 +89,13 @@
     return Uint8Array.of(command, msb, lsb);
   }
   /**
-   * @param {Uint8Array}	source_address
+   * @param {Uint8Array}	address
    * @param {Uint8Array}	segment_id
    *
    * @return {string}
    */
-  function compute_source_id(source_address, segment_id){
-    return to_string(source_address) + to_string(segment_id);
+  function compute_source_id(address, segment_id){
+    return to_string(address) + to_string(segment_id);
   }
   /**
    * @constructor
@@ -117,22 +120,22 @@
     /**
      * Must be called when new packet appear
      *
-     * @param {Uint8Array}	source_address	Address (in application-specific format) where packet came from
-     * @param {Uint8Array}	packet			Packet
+     * @param {Uint8Array}	address	Address (in application-specific format) where packet came from
+     * @param {Uint8Array}	packet	Packet
      */
-    process_packet: function(source_address, packet){
+    process_packet: function(address, packet){
       var ref$, version, segment_id, source_id, packet_data;
-      if (!(packet instanceof Uint8Array) || packet.length !== this._packet_size) {
+      if (packet.length !== this._packet_size) {
         return;
       }
       ref$ = parse_packet_header(packet), version = ref$[0], segment_id = ref$[1];
       if (version !== this._version) {
         return;
       }
-      source_id = compute_source_id(source_address, segment_id);
+      source_id = compute_source_id(address, segment_id);
       packet_data = packet.subarray(3);
       if (!this._established_segments.has(source_id)) {
-        this._process_packet_data_plaintext(source_address, segment_id, packet_data);
+        this._process_packet_data_plaintext(address, segment_id, packet_data);
       } else {
         this._process_packet_data_encrypted(source_id, packet_data);
       }
@@ -140,45 +143,66 @@
     /**
      * Must be called when new segment is established with node that has specified address
      *
-     * @param {Uint8Array}	source_address
+     * @param {Uint8Array}	address
      * @param {Uint8Array}	segment_id
      */,
-    confirm_established_segment: function(source_address, segment_id){
+    confirm_established_segment: function(address, segment_id){
       var source_id;
-      source_id = compute_source_id(source_address, segment_id);
+      source_id = compute_source_id(address, segment_id);
       this._established_segments.add(source_id);
     }
     /**
-     * @param {Uint8Array}	source_address
+     * Must be called in order to start new routing path, sends CREATE_REQUEST
+     *
+     * @param {Uint8Array}	address		Node at which to start routing path
+     * @param {Uint8Array}	segment_id	Unique segment ID for specified address
+     * @param {Uint8Array}	data
+     */,
+    create_request: function(address, segment_id, data){
+      var packet;
+      packet = generate_packet_plaintext(this._packet_size, this._version, segment_id, COMMAND_CREATE_REQUEST, data);
+      this.fire('send', {
+        address: address,
+        packet: packet
+      });
+    }
+    /**
+     * Must be called in order to respond to CREATE_RESPONSE
+     *
+     * @param {Uint8Array}	address		Node from which CREATE_REQUEST come from
+     * @param {Uint8Array}	segment_id	Same segment ID as in CREATE_REQUEST
+     * @param {Uint8Array}	data
+     */,
+    create_response: function(address, segment_id, data){
+      var packet;
+      packet = generate_packet_plaintext(this._packet_size, this._version, segment_id, COMMAND_CREATE_RESPONSE, data);
+      this.fire('send', {
+        address: address,
+        packet: packet
+      });
+    }
+    /**
+     * @param {Uint8Array}	address
      * @param {Uint8Array}	segment_id
      * @param {Uint8Array}	packet_data
      */,
-    _process_packet_data_plaintext: function(source_address, segment_id, packet_data){
-      var ref$, command, request, data, this$ = this;
-      ref$ = parse_packet_data_plaintext(packet_data), command = ref$[0], request = ref$[1];
+    _process_packet_data_plaintext: function(address, segment_id, packet_data){
+      var ref$, command, data;
+      ref$ = parse_packet_data_plaintext(packet_data), command = ref$[0], data = ref$[1];
       switch (command) {
       case COMMAND_CREATE_REQUEST:
-        data = {
-          source_address: source_address,
+        this.fire('create_request', {
+          address: address,
           segment_id: segment_id,
-          request: request,
-          response: null
-        };
-        this.fire('create_request', data).then(function(){
-          var response, packet_data_header, response_packet;
-          response = data.response;
-          if (!(response instanceof Uint8Array)) {
-            return;
-          }
-          packet_data_header = generate_packet_data_header(COMMAND_CREATE_RESPONSE, response.length);
-          response_packet = generate_packet_plaintext(this$._packet_size, this$._version, segment_id, response);
-          this$.fire('send', {
-            source_address: source_address,
-            response: response_packet
-          });
+          data: data
         });
         break;
       case COMMAND_CREATE_RESPONSE:
+        this.fire('create_response', {
+          address: address,
+          segment_id: segment_id,
+          data: data
+        });
       }
     }
     /**
