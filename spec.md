@@ -1,6 +1,6 @@
 # Ronion anonymous routing protocol framework specification
 
-Specification version: 0.0.9
+Specification version: 0.0.10
 
 Author: Nazar Mokrynskyi
 
@@ -122,10 +122,10 @@ These commands are used after establishing routing path segment with specified `
 
 Each encrypted command request data follows following pattern:
 ```
-{[command: 1][command_data_length: 2]}[command_data]
+{[command: 1][command_data_length: 2]}{[command_data]}[random_bytes_padding]
 ```
 
-Where `[command_data_length]` bytes of `[command_data]` (not including MAC) also belong to the command, are encrypted separately and their meaning depends on the command.
+Where `[command_data]` is encrypted separately and its meaning depends on the command. `[command_data]` is always present, even if `[command_data_length]` is `0`, so it should go through regular decryption process (in order to verify MAC and maintain consistent state).
 
 #### EXTEND_REQUEST command
 Is used in order to extend routing path one segment further, effectively generates `CREATE_REQUEST` to the next node.
@@ -165,7 +165,7 @@ Is used in order to destroy certain segment of the routing path. This command MU
 
 Request data:
 ```
-{[command: 1, 5][length: 2, 0]}[random_bytes_padding]
+{[command: 1, 5][length: 2, 0]}{}[random_bytes_padding]
 ```
 
 No response is needed for this command, can be sent to nodes if unsure whether node is still alive and will actually receive the message.
