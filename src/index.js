@@ -124,7 +124,7 @@
     this._packet_size = packet_size;
     this._address_length = address_length;
     this._mac_length = mac_length;
-    this._established_segments = new Set;
+    this._established_segments = new Map;
     this._waiting_segments = new Map;
     this._segments_mapping = new Map;
   }
@@ -163,7 +163,7 @@
     confirm_established_segment: function(address, segment_id){
       var source_id;
       source_id = compute_source_id(address, segment_id);
-      this._established_segments.add(source_id);
+      this._established_segments.set(source_id, [address]);
     }
     /**
      * Must be called in order to start new routing path, sends CREATE_REQUEST
@@ -183,7 +183,7 @@
         address: address,
         packet: packet
       });
-      segment_id;
+      return segment_id;
     }
     /**
      * @param {Uint8Array} address
@@ -216,6 +216,24 @@
         address: address,
         packet: packet
       });
+    }
+    /**
+     * Must be called in order to extend routing path by one more segment
+     *
+     * @param {Uint8Array}	address				Node at which routing path has started
+     * @param {Uint8Array}	segment_id			Same segment ID as returned by CREATE_REQUEST
+     * @param {Uint8Array}	next_node_address	Node to which routing path will be extended from current last node
+     * @param {Uint8Array}	data
+     *
+     * @throws {ReferenceError}
+     */,
+    extend_request: function(address, segment_id, next_node_address, data){
+      var source_id, target_address;
+      source_id = compute_source_id(address, segment_id);
+      if (!this._established_segments.has(source_id)) {
+        throw new ReferenceError('There is no such segment established');
+      }
+      target_address = this._established_segments.get(source_id).slice(-1)[0];
     }
     /**
      * @param {Uint8Array}	address
@@ -285,34 +303,14 @@
      * @param {Uint8Array}	packet_data
      */,
     _process_packet_data_encrypted: function(address, segment_id, packet_data){
-      var packet_data_header_encrypted, data, this$ = this;
+      var packet_data_header_encrypted, this$ = this;
       packet_data_header_encrypted = packet_data.slice(0, 3 + this._mac_length);
-      data = {
-        address: address,
-        segment_id: segment_id,
-        ciphertext: packet_data_header_encrypted,
-        plaintext: null
-      };
-      this.fire('decrypt', data).then(function(){
-        var plaintext, ref$, command, command_data_length, command_data_encrypted;
-        plaintext = data.plaintext;
-        if (!(plaintext instanceof Uint8Array) && plaintext.length !== 3) {
-          return;
-        }
-        ref$ = parse_packet_data_header(plaintext), command = ref$[0], command_data_length = ref$[1];
+      this._decrypt(address, segment_id, address, packet_data_header_encrypted, function(packet_data_header){
+        var ref$, command, command_data_length, command_data_encrypted;
+        ref$ = parse_packet_data_header(packet_data_header), command = ref$[0], command_data_length = ref$[1];
         command_data_encrypted = packet_data.slice(packet_data_header_encrypted.length, packet_data_header_encrypted.length + command_data_length);
-        data = {
-          address: address,
-          segment_id: segment_id,
-          ciphertext: command_data_encrypted,
-          plaintext: null
-        };
-        this$.fire('decrypt', data).then(function(){
-          var command_data, next_node_address, segment_creation_request_data, next_node_segment_id, source_id, e;
-          command_data = data.plaintext;
-          if (!(command_data instanceof Uint8Array) && command_data.length !== command_data_length) {
-            return;
-          }
+        this$._decrypt(address, segment_id, address, command_data_encrypted, function(command_data){
+          var next_node_address, segment_creation_request_data, next_node_segment_id, source_id, e;
           switch (command) {
           case COMMAND_EXTEND_REQUEST:
             try {
@@ -343,6 +341,62 @@
           }
         });
       });
+    }
+    /**
+     * @param {Uint8Array}	address			Node at which routing path has started
+     * @param {Uint8Array}	segment_id		Same segment ID as returned by CREATE_REQUEST
+     * @param {Uint8Array}	target_address	Address for which to encrypt (can be the same as address argument or any other node in routing path)
+     * @param {Uint8Array}	plaintext
+     *
+     * @return {Promise} Will resolve with Uint8Array ciphertext if encrypted successfully
+     */,
+    _encrypt: function(address, segment_id, target_address, plaintext){
+      var data, promise, this$ = this;
+      data = {
+        address: address,
+        segment_id: segment_id,
+        target_address: target_address,
+        plaintext: plaintext,
+        ciphertext: null
+      };
+      promise = this.fire('encrypt', data).then(function(){
+        var ciphertext;
+        ciphertext = data.ciphertext;
+        if (!(ciphertext instanceof Uint8Array) || ciphertext.length !== plaintext.length + this$._mac_length) {
+          throw new Error('Encryption failed');
+        }
+        return ciphertext;
+      });
+      promise['catch'](function(){});
+      return promise;
+    }
+    /**
+     * @param {Uint8Array}	address			Node at which routing path has started
+     * @param {Uint8Array}	segment_id		Same segment ID as returned by CREATE_REQUEST
+     * @param {Uint8Array}	target_address	Address from which to decrypt (can be the same as address argument or any other node in routing path)
+     * @param {Uint8Array}	ciphertext
+     *
+     * @return {Promise} Will resolve with Uint8Array plaintext if decrypted successfully
+     */,
+    _decrypt: function(address, segment_id, target_address, ciphertext){
+      var data, promise, this$ = this;
+      data = {
+        address: address,
+        segment_id: segment_id,
+        target_address: target_address,
+        ciphertext: ciphertext,
+        plaintext: null
+      };
+      promise = this.fire('decrypt', data).then(function(){
+        var plaintext;
+        plaintext = data.plaintext;
+        if (!(plaintext instanceof Uint8Array) || plaintext.length !== ciphertext.length - this$._mac_length) {
+          throw new Error('Decryption failed');
+        }
+        return plaintext;
+      });
+      promise['catch'](function(){});
+      return promise;
     }
   };
   Ronion.prototype = Object.assign(Object.create(asyncEventer.prototype), Ronion.prototype);

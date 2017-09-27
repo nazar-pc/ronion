@@ -121,7 +121,7 @@ function compute_source_id (address, segment_id)
 	@_packet_size			= packet_size
 	@_address_length		= address_length
 	@_mac_length			= mac_length
-	@_established_segments	= new Set
+	@_established_segments	= new Map
 	@_waiting_segments		= new Map
 	@_segments_mapping		= new Map
 
@@ -157,7 +157,7 @@ Ronion:: =
 	 */
 	confirm_established_segment : (address, segment_id) !->
 		source_id	= compute_source_id(address, segment_id)
-		@_established_segments.add(source_id)
+		@_established_segments.set(source_id, [address])
 	/**
 	 * Must be called in order to start new routing path, sends CREATE_REQUEST
 	 *
@@ -168,7 +168,7 @@ Ronion:: =
 	 *
 	 * @throws {RangeError}
 	 */
-	create_request : (address, data) !->
+	create_request : (address, data) ->
 		segment_id	= @_generate_segment_id(address)
 		packet		= generate_packet_plaintext(@_packet_size, @_version, segment_id, COMMAND_CREATE_REQUEST, data)
 		@fire('send', {address, packet})
@@ -195,6 +195,22 @@ Ronion:: =
 	create_response : (address, segment_id, data) !->
 		packet	= generate_packet_plaintext(@_packet_size, @_version, segment_id, COMMAND_CREATE_RESPONSE, data)
 		@fire('send', {address, packet})
+	/**
+	 * Must be called in order to extend routing path by one more segment
+	 *
+	 * @param {Uint8Array}	address				Node at which routing path has started
+	 * @param {Uint8Array}	segment_id			Same segment ID as returned by CREATE_REQUEST
+	 * @param {Uint8Array}	next_node_address	Node to which routing path will be extended from current last node
+	 * @param {Uint8Array}	data
+	 *
+	 * @throws {ReferenceError}
+	 */
+	extend_request : (address, segment_id, next_node_address, data) !->
+		source_id	= compute_source_id(address, segment_id)
+		if !@_established_segments.has(source_id)
+			throw new ReferenceError('There is no such segment established')
+		target_address	= @_established_segments.get(source_id).slice(-1)[0]
+		# TODO: the rest
 	/**
 	 * @param {Uint8Array}	address
 	 * @param {Uint8Array}	segment_id
@@ -247,28 +263,10 @@ Ronion:: =
 	_process_packet_data_encrypted : (address, segment_id, packet_data) !->
 		# Packet data header size + MAC
 		packet_data_header_encrypted	= packet_data.slice(0, 3 + @_mac_length)
-		data							=
-			address		: address
-			segment_id	: segment_id
-			ciphertext	: packet_data_header_encrypted
-			plaintext	: null
-		<~! @fire('decrypt', data).then
-		plaintext	= data.plaintext
-		# Do nothing if decryption failed
-		if !(plaintext instanceof Uint8Array) && plaintext.length != 3
-			return
-		[command, command_data_length]	= parse_packet_data_header(plaintext)
+		(packet_data_header)			<~! @_decrypt(address, segment_id, address, packet_data_header_encrypted)
+		[command, command_data_length]	= parse_packet_data_header(packet_data_header)
 		command_data_encrypted			= packet_data.slice(packet_data_header_encrypted.length, packet_data_header_encrypted.length + command_data_length)
-		data							:=
-			address		: address
-			segment_id	: segment_id
-			ciphertext	: command_data_encrypted
-			plaintext	: null
-		<~! @fire('decrypt', data).then
-		command_data	= data.plaintext
-		# Do nothing if decryption failed
-		if !(command_data instanceof Uint8Array) && command_data.length != command_data_length
-			return
+		(command_data)					<~! @_decrypt(address, segment_id, address, command_data_encrypted)
 		switch command
 			case COMMAND_EXTEND_REQUEST
 				try
@@ -289,6 +287,40 @@ Ronion:: =
 				void
 			case COMMAND_DATA
 				@fire('data', {address, segment_id, data : command_data})
+	/**
+	 * @param {Uint8Array}	address			Node at which routing path has started
+	 * @param {Uint8Array}	segment_id		Same segment ID as returned by CREATE_REQUEST
+	 * @param {Uint8Array}	target_address	Address for which to encrypt (can be the same as address argument or any other node in routing path)
+	 * @param {Uint8Array}	plaintext
+	 *
+	 * @return {Promise} Will resolve with Uint8Array ciphertext if encrypted successfully
+	 */
+	_encrypt : (address, segment_id, target_address, plaintext) ->
+		data	= {address, segment_id, target_address, plaintext, ciphertext : null}
+		promise	= @fire('encrypt', data).then ~>
+			ciphertext	= data.ciphertext
+			if !(ciphertext instanceof Uint8Array) || ciphertext.length != (plaintext.length + @_mac_length)
+				throw new Error('Encryption failed')
+			ciphertext
+		promise.catch(->) # Just to avoid unhandled promise rejection
+		promise
+	/**
+	 * @param {Uint8Array}	address			Node at which routing path has started
+	 * @param {Uint8Array}	segment_id		Same segment ID as returned by CREATE_REQUEST
+	 * @param {Uint8Array}	target_address	Address from which to decrypt (can be the same as address argument or any other node in routing path)
+	 * @param {Uint8Array}	ciphertext
+	 *
+	 * @return {Promise} Will resolve with Uint8Array plaintext if decrypted successfully
+	 */
+	_decrypt : (address, segment_id, target_address, ciphertext) ->
+		data	= {address, segment_id, target_address, ciphertext, plaintext : null}
+		promise	= @fire('decrypt', data).then ~>
+			plaintext	= data.plaintext
+			if !(plaintext instanceof Uint8Array) || plaintext.length != (ciphertext.length - @_mac_length)
+				throw new Error('Decryption failed')
+			plaintext
+		promise.catch(->) # Just to avoid unhandled promise rejection
+		promise
 
 Ronion:: = Object.assign(Object.create(async-eventer::), Ronion::)
 
