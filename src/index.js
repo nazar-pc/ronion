@@ -19,10 +19,21 @@
   /**
    * @param {Uint8Array} array
    *
-   * @return {string}
+   * @return {number}
    */
-  function to_string(array){
-    return array.join('');
+  function uint_array_to_number(array){
+    return array[0] * 256 + array[1];
+  }
+  /**
+   * @param {number} number
+   *
+   * @return {Uint8Array}
+   */
+  function number_to_uint_array(number){
+    var lsb, msb;
+    lsb = number % 256;
+    msb = (number - lsb) / 256;
+    return Uint8Array.of(msb, lsb);
   }
   /**
    * @param {Uint8Array} packet
@@ -38,7 +49,7 @@
    * @return {number[]} [command, command_data_length]
    */
   function parse_packet_data_header(packet_data){
-    return [packet_data[0], packet_data[0] * 256 + packet_data[1]];
+    return [packet_data[0], uint_array_to_number(packet_data.subarray(1, 3))];
   }
   /**
    * @param {Uint8Array} packet_data
@@ -81,10 +92,11 @@
    * @return {Uint8Array}
    */
   function generate_packet_data_header(command, command_data_length){
-    var lsb, msb;
-    lsb = command_data_length % 256;
-    msb = (command_data_length - lsb) / 256;
-    return Uint8Array.of(command, msb, lsb);
+    var x$;
+    x$ = new Uint8Array(3);
+    x$.set(command);
+    x$.set(number_to_uint_array(command_data_length), 1);
+    return x$;
   }
   /**
    * @param {Uint8Array}	address
@@ -93,7 +105,7 @@
    * @return {string}
    */
   function compute_source_id(address, segment_id){
-    return to_string(address) + to_string(segment_id);
+    return address.join('') + segment_id.join('');
   }
   /**
    * @constructor
@@ -113,6 +125,8 @@
     this._address_length = address_length;
     this._mac_length = mac_length;
     this._established_segments = new Set;
+    this._waiting_segments = new Map;
+    this._segments_mapping = new Map;
   }
   Ronion.prototype = {
     /**
@@ -143,6 +157,8 @@
      *
      * @param {Uint8Array}	address
      * @param {Uint8Array}	segment_id
+     *
+     * @throws {RangeError}
      */,
     confirm_established_segment: function(address, segment_id){
       var source_id;
@@ -153,16 +169,38 @@
      * Must be called in order to start new routing path, sends CREATE_REQUEST
      *
      * @param {Uint8Array}	address		Node at which to start routing path
-     * @param {Uint8Array}	segment_id	Unique segment ID for specified address
      * @param {Uint8Array}	data
+     *
+     * @return {Uint8Array} segment_id Generated segment ID that can be later used for routing path extension
+     *
+     * @throws {RangeError}
      */,
-    create_request: function(address, segment_id, data){
-      var packet;
+    create_request: function(address, data){
+      var segment_id, packet;
+      segment_id = this._generate_segment_id(address);
       packet = generate_packet_plaintext(this._packet_size, this._version, segment_id, COMMAND_CREATE_REQUEST, data);
       this.fire('send', {
         address: address,
         packet: packet
       });
+      segment_id;
+    }
+    /**
+     * @param {Uint8Array} address
+     *
+     * @return {Uint8Array}
+     */,
+    _generate_segment_id: function(address){
+      var i$, to$, i, segment_id, source_id;
+      for (i$ = 0, to$ = Math.pow(2, 16); i$ < to$; ++i$) {
+        i = i$;
+        segment_id = number_to_uint_array(i);
+        source_id = compute_source_id(address, segment_id);
+        if (!this._established_segments.has(source_id) && !this._waiting_segments.has(source_id)) {
+          return segment_id;
+        }
+      }
+      throw new RangeError('Out of possible segment IDs');
     }
     /**
      * Must be called in order to respond to CREATE_RESPONSE
@@ -185,7 +223,7 @@
      * @param {Uint8Array}	packet_data
      */,
     _process_packet_data_plaintext: function(address, segment_id, packet_data){
-      var ref$, command, command_data;
+      var ref$, command, command_data, source_id, original_source;
       ref$ = parse_packet_data_plaintext(packet_data), command = ref$[0], command_data = ref$[1];
       switch (command) {
       case COMMAND_CREATE_REQUEST:
@@ -196,11 +234,49 @@
         });
         break;
       case COMMAND_CREATE_RESPONSE:
-        this.fire('create_response', {
-          address: address,
-          segment_id: segment_id,
-          data: command_data
-        });
+        source_id = compute_source_id(address, segment_id);
+        if (this._waiting_segments.has(source_id)) {
+          original_source = this._waiting_segments.get(source_id);
+          this._waiting_segments['delete'](source_id);
+          this.create_response(original_source.address, original_source.segment_id, command_data);
+          this._add_segments_mapping(address, segment_id, original_source.address, original_source.segment_id);
+        } else {
+          this.fire('create_response', {
+            address: address,
+            segment_id: segment_id,
+            data: command_data
+          });
+        }
+      }
+      this.fire('send', {
+        address: address,
+        packet: packet
+      });
+    }
+    /**
+     * @param {Uint8Array}	address1
+     * @param {Uint8Array}	segment_id1
+     * @param {Uint8Array}	address2
+     * @param {Uint8Array}	segment_id2
+     */,
+    _add_segments_mapping: function(address1, segment_id1, address2, segment_id2){
+      var source_id1, source_id2;
+      source_id1 = compute_source_id(address1, segment_id1);
+      source_id2 = compute_source_id(address2, segment_id2);
+      this._segments_mapping.set(source_id1, source_id2);
+      this._segments_mapping.set(source_id2, source_id1);
+    }
+    /**
+     * @param {Uint8Array}	address
+     * @param {Uint8Array}	segment_id
+     */,
+    _del_segments_mapping: function(address, segment_id){
+      var source_id1, source_id2;
+      source_id1 = compute_source_id(address, segment_id);
+      if (this._segments_mapping.has(source_id1)) {
+        source_id2 = this._segments_mapping.get(source_id1);
+        this._segments_mapping['delete'](source_id1);
+        this._segments_mapping['delete'](source_id2);
       }
     }
     /**
@@ -232,13 +308,27 @@
           plaintext: null
         };
         this$.fire('decrypt', data).then(function(){
-          var command_data;
+          var command_data, next_node_address, segment_creation_request_data, next_node_segment_id, source_id, e;
           command_data = data.plaintext;
           if (!(command_data instanceof Uint8Array) && command_data.length !== command_data_length) {
             return;
           }
           switch (command) {
           case COMMAND_EXTEND_REQUEST:
+            try {
+              next_node_address = command_data.subarray(0, this$._address_length);
+              segment_creation_request_data = command_data.subarray(this$._address_length);
+              next_node_segment_id = this$.create_request(next_node_address, segment_creation_request_data);
+              source_id = compute_source_id(next_node_address, next_node_segment_id);
+              this$._waiting_segments.set(source_id, {
+                address: address,
+                segment_id: segment_id
+              });
+            } catch (e$) {
+              e = e$;
+              this$.create_response(address, segment_id, new Uint8Array);
+              return;
+            }
             break;
           case COMMAND_EXTEND_RESPONSE:
             break;

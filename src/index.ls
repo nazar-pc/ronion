@@ -19,10 +19,20 @@ const COMMAND_DATA				= 6
 /**
  * @param {Uint8Array} array
  *
- * @return {string}
+ * @return {number}
  */
-function to_string (array)
-	array.join('')
+function uint_array_to_number (array)
+	array[0] * 256 + array[1]
+
+/**
+ * @param {number} number
+ *
+ * @return {Uint8Array}
+ */
+function number_to_uint_array (number)
+	lsb	= number % 256
+	msb	= (number - lsb) / 256
+	Uint8Array.of(msb, lsb)
 
 /**
  * @param {Uint8Array} packet
@@ -40,7 +50,7 @@ function parse_packet_header (packet)
  */
 function parse_packet_data_header (packet_data)
 	# First byte is command, next 2 bytes are command data length as unsigned integer in big endian format
-	[packet_data[0], packet_data[0] * 256 + packet_data[1]]
+	[packet_data[0], uint_array_to_number(packet_data.subarray(1, 3))]
 
 /**
  * @param {Uint8Array} packet_data
@@ -81,9 +91,9 @@ function generate_packet_plaintext (packet_size, version, segment_id, command, c
  */
 function generate_packet_data_header (command, command_data_length)
 	# First byte is command, next 2 bytes are command data length as unsigned integer in big endian format
-	lsb	= command_data_length % 256
-	msb	= (command_data_length - lsb) / 256
-	Uint8Array.of(command, msb, lsb)
+	new Uint8Array(3)
+		..set(command)
+		..set(number_to_uint_array(command_data_length), 1)
 
 /**
  * @param {Uint8Array}	address
@@ -92,7 +102,7 @@ function generate_packet_data_header (command, command_data_length)
  * @return {string}
  */
 function compute_source_id (address, segment_id)
-	to_string(address) + to_string(segment_id)
+	address.join('') + segment_id.join('')
 
 /**
  * @constructor
@@ -112,6 +122,8 @@ function compute_source_id (address, segment_id)
 	@_address_length		= address_length
 	@_mac_length			= mac_length
 	@_established_segments	= new Set
+	@_waiting_segments		= new Map
+	@_segments_mapping		= new Map
 
 Ronion:: =
 	/**
@@ -140,6 +152,8 @@ Ronion:: =
 	 *
 	 * @param {Uint8Array}	address
 	 * @param {Uint8Array}	segment_id
+	 *
+	 * @throws {RangeError}
 	 */
 	confirm_established_segment : (address, segment_id) !->
 		source_id	= compute_source_id(address, segment_id)
@@ -148,12 +162,29 @@ Ronion:: =
 	 * Must be called in order to start new routing path, sends CREATE_REQUEST
 	 *
 	 * @param {Uint8Array}	address		Node at which to start routing path
-	 * @param {Uint8Array}	segment_id	Unique segment ID for specified address
 	 * @param {Uint8Array}	data
+	 *
+	 * @return {Uint8Array} segment_id Generated segment ID that can be later used for routing path extension
+	 *
+	 * @throws {RangeError}
 	 */
-	create_request : (address, segment_id, data) !->
-		packet	= generate_packet_plaintext(@_packet_size, @_version, segment_id, COMMAND_CREATE_REQUEST, data)
+	create_request : (address, data) !->
+		segment_id	= @_generate_segment_id(address)
+		packet		= generate_packet_plaintext(@_packet_size, @_version, segment_id, COMMAND_CREATE_REQUEST, data)
 		@fire('send', {address, packet})
+		segment_id
+	/**
+	 * @param {Uint8Array} address
+	 *
+	 * @return {Uint8Array}
+	 */
+	_generate_segment_id : (address) ->
+		for i from 0 til 2^16
+			segment_id	= number_to_uint_array(i)
+			source_id	= compute_source_id(address, segment_id)
+			if !@_established_segments.has(source_id) && !@_waiting_segments.has(source_id)
+				return segment_id
+		throw new RangeError('Out of possible segment IDs')
 	/**
 	 * Must be called in order to respond to CREATE_RESPONSE
 	 *
@@ -175,8 +206,39 @@ Ronion:: =
 			case COMMAND_CREATE_REQUEST
 				@fire('create_request', {address, segment_id, data : command_data})
 			case COMMAND_CREATE_RESPONSE
-				# TODO: separate plaintext handling in response to CREATE_REQUEST by the node itself from CREATE_REQUEST that was sent because of EXTEND_REQUEST
-				@fire('create_response', {address, segment_id, data : command_data})
+				source_id	= compute_source_id(address, segment_id)
+				if @_waiting_segments.has(source_id)
+					original_source	= @_waiting_segments.get(source_id)
+					@_waiting_segments.delete(source_id)
+					@create_response(original_source.address, original_source.segment_id, command_data)
+					@_add_segments_mapping(address, segment_id, original_source.address, original_source.segment_id)
+				else
+					# TODO: Should this event be fired in any case?
+					# After at least one create_response event received routing path segment should be considered half-established and destroy() should be called
+					# in order to drop half-established routing path segment
+					@fire('create_response', {address, segment_id, data : command_data})
+		@fire('send', {address, packet})
+	/**
+	 * @param {Uint8Array}	address1
+	 * @param {Uint8Array}	segment_id1
+	 * @param {Uint8Array}	address2
+	 * @param {Uint8Array}	segment_id2
+	 */
+	_add_segments_mapping : (address1, segment_id1, address2, segment_id2) !->
+		source_id1	= compute_source_id(address1, segment_id1)
+		source_id2	= compute_source_id(address2, segment_id2)
+		@_segments_mapping.set(source_id1, source_id2)
+		@_segments_mapping.set(source_id2, source_id1)
+	/**
+	 * @param {Uint8Array}	address
+	 * @param {Uint8Array}	segment_id
+	 */
+	_del_segments_mapping : (address, segment_id) !->
+		source_id1	= compute_source_id(address, segment_id)
+		if @_segments_mapping.has(source_id1)
+			source_id2	= @_segments_mapping.get(source_id1)
+			@_segments_mapping.delete(source_id1)
+			@_segments_mapping.delete(source_id2)
 	/**
 	 * @param {Uint8Array}	address
 	 * @param {Uint8Array}	segment_id
@@ -209,8 +271,16 @@ Ronion:: =
 			return
 		switch command
 			case COMMAND_EXTEND_REQUEST
-				# TODO
-				void
+				try
+					next_node_address				= command_data.subarray(0, @_address_length)
+					segment_creation_request_data	= command_data.subarray(@_address_length)
+					next_node_segment_id			= @create_request(next_node_address, segment_creation_request_data)
+					source_id						= compute_source_id(next_node_address, next_node_segment_id)
+					@_waiting_segments.set(source_id, {address, segment_id})
+				catch
+					# Send empty CREATE_RESPONSE indicating that it is not possible to extend routing path
+					@create_response(address, segment_id, new Uint8Array)
+					return
 			case COMMAND_EXTEND_RESPONSE
 				# TODO
 				void
