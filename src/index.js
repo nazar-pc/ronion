@@ -124,8 +124,9 @@
     this._address_length = address_length;
     this._mac_length = mac_length;
     this._established_segments = new Map;
-    this._waiting_segments = new Map;
-    this._segments_mapping = new Map;
+    this._pending_extension_segments = new Map;
+    this._pending_extensions = new Map;
+    this._segments_forwarding_mapping = new Map;
   }
   Ronion.prototype = {
     /**
@@ -145,10 +146,10 @@
       }
       source_id = compute_source_id(address, segment_id);
       packet_data = packet.subarray(3);
-      if (!this._established_segments.has(source_id)) {
-        this._process_packet_data_plaintext(address, segment_id, packet_data);
-      } else {
+      if (this._established_segments.has(source_id)) {
         this._process_packet_data_encrypted(source_id, packet_data);
+      } else {
+        this._process_packet_data_plaintext(address, segment_id, packet_data);
       }
     }
     /**
@@ -156,13 +157,24 @@
      *
      * @param {Uint8Array}	address
      * @param {Uint8Array}	segment_id
-     *
-     * @throws {RangeError}
      */,
     confirm_established_segment: function(address, segment_id){
       var source_id;
       source_id = compute_source_id(address, segment_id);
       this._established_segments.set(source_id, [address]);
+    }
+    /**
+     * Must be called when new segment is established with node that has specified address
+     *
+     * @param {Uint8Array}	address		Node at which to start routing path
+     * @param {Uint8Array}	segment_id	Same segment ID as in CREATE_REQUEST
+     */,
+    confirm_extended_path: function(address, segment_id){
+      var source_id, next_node_address;
+      source_id = compute_source_id(address, segment_id);
+      next_node_address = this._pending_extensions.get(source_id);
+      this._established_segments.get(source_id).push(next_node_address);
+      this._pending_extensions['delete'](source_id);
     }
     /**
      * Must be called in order to start new routing path, sends CREATE_REQUEST
@@ -196,7 +208,7 @@
         i = i$;
         segment_id = number_to_uint_array(i);
         source_id = compute_source_id(address, segment_id);
-        if (!this._established_segments.has(source_id) && !this._waiting_segments.has(source_id)) {
+        if (!this._established_segments.has(source_id) && !this._pending_extension_segments.has(source_id)) {
           return segment_id;
         }
       }
@@ -248,6 +260,7 @@
             address: address,
             packet: packet
           });
+          this$._pending_extensions.add(source_id, next_node_address);
         });
       });
     }
@@ -288,11 +301,11 @@
         break;
       case COMMAND_CREATE_RESPONSE:
         source_id = compute_source_id(address, segment_id);
-        if (this._waiting_segments.has(source_id)) {
-          original_source = this._waiting_segments.get(source_id);
-          this._waiting_segments['delete'](source_id);
+        if (this._pending_extension_segments.has(source_id)) {
+          original_source = this._pending_extension_segments.get(source_id);
+          this._pending_extension_segments['delete'](source_id);
           this._extend_response(original_source.address, original_source.segment_id, command_data);
-          this._add_segments_mapping(address, segment_id, original_source.address, original_source.segment_id);
+          this._add_segments_forwarding_mapping(address, segment_id, original_source.address, original_source.segment_id);
         } else {
           this.fire('create_response', {
             address: address,
@@ -312,24 +325,24 @@
      * @param {Uint8Array}	address2
      * @param {Uint8Array}	segment_id2
      */,
-    _add_segments_mapping: function(address1, segment_id1, address2, segment_id2){
+    _add_segments_forwarding_mapping: function(address1, segment_id1, address2, segment_id2){
       var source_id1, source_id2;
       source_id1 = compute_source_id(address1, segment_id1);
       source_id2 = compute_source_id(address2, segment_id2);
-      this._segments_mapping.set(source_id1, source_id2);
-      this._segments_mapping.set(source_id2, source_id1);
+      this._segments_forwarding_mapping.set(source_id1, source_id2);
+      this._segments_forwarding_mapping.set(source_id2, source_id1);
     }
     /**
      * @param {Uint8Array}	address
      * @param {Uint8Array}	segment_id
      */,
-    _del_segments_mapping: function(address, segment_id){
+    _del_segments_forwarding_mapping: function(address, segment_id){
       var source_id1, source_id2;
       source_id1 = compute_source_id(address, segment_id);
-      if (this._segments_mapping.has(source_id1)) {
-        source_id2 = this._segments_mapping.get(source_id1);
-        this._segments_mapping['delete'](source_id1);
-        this._segments_mapping['delete'](source_id2);
+      if (this._segments_forwarding_mapping.has(source_id1)) {
+        source_id2 = this._segments_forwarding_mapping.get(source_id1);
+        this._segments_forwarding_mapping['delete'](source_id1);
+        this._segments_forwarding_mapping['delete'](source_id2);
       }
     }
     /**
@@ -345,15 +358,15 @@
         ref$ = parse_packet_data_header(packet_data_header), command = ref$[0], command_data_length = ref$[1];
         command_data_encrypted = packet_data.slice(packet_data_header_encrypted.length, packet_data_header_encrypted.length + command_data_length);
         this$._decrypt(address, segment_id, address, command_data_encrypted, function(command_data){
-          var next_node_address, segment_creation_request_data, next_node_segment_id, source_id, e;
+          var next_node_address, segment_creation_request_data, next_node_segment_id, next_node_source_id, e, source_id;
           switch (command) {
           case COMMAND_EXTEND_REQUEST:
             try {
               next_node_address = command_data.subarray(0, this$._address_length);
               segment_creation_request_data = command_data.subarray(this$._address_length);
               next_node_segment_id = this$.create_request(next_node_address, segment_creation_request_data);
-              source_id = compute_source_id(next_node_address, next_node_segment_id);
-              this$._waiting_segments.set(source_id, {
+              next_node_source_id = compute_source_id(next_node_address, next_node_segment_id);
+              this$._pending_extension_segments.set(next_node_source_id, {
                 address: address,
                 segment_id: segment_id
               });
@@ -364,6 +377,14 @@
             }
             break;
           case COMMAND_EXTEND_RESPONSE:
+            source_id = compute_source_id(address, segment_id);
+            if (this$._pending_extensions.has(source_id)) {
+              this$.fire('extend_response', {
+                address: address,
+                segment_id: segment_id,
+                command_data: command_data
+              });
+            }
             break;
           case COMMAND_DESTROY:
             break;

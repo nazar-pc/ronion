@@ -1,6 +1,6 @@
 # Ronion anonymous routing protocol framework specification
 
-Specification version: 0.0.10
+Specification version: 0.0.11
 
 Author: Nazar Mokrynskyi
 
@@ -128,7 +128,7 @@ Each encrypted command request data follows following pattern:
 Where `[command_data]` is encrypted separately and its meaning depends on the command. `[command_data]` is always present, even if `[command_data_length]` is `0`, so it should go through regular decryption process (in order to verify MAC and maintain consistent state).
 
 #### EXTEND_REQUEST command
-Is used in order to extend routing path one segment further, effectively generates `CREATE_REQUEST` to the next node.
+Is used in order to extend routing path one segment further, effectively generates `CREATE_REQUEST` to the next node, can be send multiple times to the same node if multiple roundtrips are needed.
 
 If `[segment_id]` was previously extended to another node, that link between `[segment_id]` of the previous node and `[segment_id]` of the next node MUST be destroyed and new routing path extension MUST be performed.
 
@@ -148,7 +148,7 @@ Request data handling:
 ```
 
 #### EXTEND_RESPONSE command
-Is used in order to extend routing path one segment further, effectively wraps `CREATE_RESPONSE` from next node and send it to the previous node.
+Is used in order to extend routing path one segment further, effectively wraps `CREATE_RESPONSE` from next node and send it to the previous node, is sent exactly once in response to each `EXTEND_REQUEST`.
 
 Response data:
 ```
