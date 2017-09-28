@@ -1,6 +1,6 @@
 # Ronion anonymous routing protocol framework specification
 
-Specification version: 0.0.11
+Specification version: 0.0.12
 
 Author: Nazar Mokrynskyi
 
@@ -90,7 +90,7 @@ Then initiator sends `EXTEND_REQUEST` command to the first node in order to exte
 Initiator keeps sending `EXTEND_REQUEST` commands to the last node in current routing path until last node in routing path is responder, at which point routing path is ready to send data back and forth.
 
 ### Plain text commands
-These commands are used prior to establishing routing path segments with specified `[segment_id]`, as soon as routing path segment is established only encrypted commands MUST be accepted.
+These commands are used prior to establishing routing path segments with specified `[segment_id]`, as soon as routing path segment is established plaintext commands MUST NOT be accepted.
 
 #### CREATE_REQUEST
 Is sent when creating segment of routing path is needed, can be send multiple times to the same node if multiple roundtrips are needed.

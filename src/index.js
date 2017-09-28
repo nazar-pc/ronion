@@ -6,7 +6,7 @@
  * @license   MIT License, see license.txt
  */
 (function(){
-  var asyncEventer, randombytes, COMMAND_CREATE_REQUEST, COMMAND_CREATE_RESPONSE, COMMAND_EXTEND_REQUEST, COMMAND_EXTEND_RESPONSE, COMMAND_DESTROY, COMMAND_DATA, this$ = this;
+  var asyncEventer, randombytes, COMMAND_CREATE_REQUEST, COMMAND_CREATE_RESPONSE, COMMAND_EXTEND_REQUEST, COMMAND_EXTEND_RESPONSE, COMMAND_DESTROY, COMMAND_DATA, MAX_PENDING_SEGMENTS, this$ = this;
   asyncEventer = require('async-eventer');
   randombytes = require('randombytes');
   module.exports = Ronion;
@@ -16,6 +16,7 @@
   COMMAND_EXTEND_RESPONSE = 4;
   COMMAND_DESTROY = 5;
   COMMAND_DATA = 6;
+  MAX_PENDING_SEGMENTS = 10;
   /**
    * @param {Uint8Array} array
    *
@@ -151,7 +152,8 @@
     this._mac_length = mac_length;
     this._outgoing_established_segments = new Map;
     this._incoming_established_segments = new Set;
-    this._pending_extension_segments = new Map;
+    this._pending_segments = new Map;
+    this._pending_address_segments = new Map;
     this._pending_extensions = new Map;
     this._segments_forwarding_mapping = new Map;
   }
@@ -173,7 +175,8 @@
       }
       source_id = compute_source_id(address, segment_id);
       packet_data = packet.subarray(3);
-      if (this._outgoing_established_segments.has(source_id)) {
+      source_id = compute_source_id(address, segment_id);
+      if (this._outgoing_established_segments.has(source_id) || this._incoming_established_segments.has(source_id)) {
         this._process_packet_data_encrypted(source_id, packet_data);
       } else {
         this._process_packet_data_plaintext(address, segment_id, packet_data);
@@ -189,6 +192,7 @@
       var source_id;
       source_id = compute_source_id(address, segment_id);
       this._outgoing_established_segments.set(source_id, [address]);
+      this._unmark_segment_as_pending(address, segment_id);
     }
     /**
      * Must be called when new segment is established with node that has specified address (after receiving CREATE_REQUEST and sending CREATE_RESPONSE)
@@ -200,6 +204,7 @@
       var source_id;
       source_id = compute_source_id(address, segment_id);
       this._incoming_established_segments.add(source_id);
+      this._unmark_segment_as_pending(address, segment_id);
     }
     /**
      * Must be called when new segment is established with node that has specified address
@@ -232,12 +237,15 @@
         address: address,
         packet: packet
       });
+      this._mark_segment_as_pending(address, segment_id);
       return segment_id;
     }
     /**
      * @param {Uint8Array} address
      *
      * @return {Uint8Array}
+     *
+     * @throws {RangeError}
      */,
     _generate_segment_id: function(address){
       var i$, to$, i, segment_id, source_id;
@@ -245,7 +253,7 @@
         i = i$;
         segment_id = number_to_uint_array(i);
         source_id = compute_source_id(address, segment_id);
-        if (!this._outgoing_established_segments.has(source_id) && !this._pending_extension_segments.has(source_id) && !this._incoming_established_segments.has(source_id)) {
+        if (!this._outgoing_established_segments.has(source_id) && !this._pending_segments.has(source_id) && !this._incoming_established_segments.has(source_id)) {
           return segment_id;
         }
       }
@@ -356,10 +364,11 @@
      * @param {Uint8Array}	packet_data
      */,
     _process_packet_data_plaintext: function(address, segment_id, packet_data){
-      var ref$, command, command_data, source_id, original_source;
+      var ref$, command, command_data, pending_segment_data, original_source;
       ref$ = parse_packet_data_plaintext(packet_data), command = ref$[0], command_data = ref$[1];
       switch (command) {
       case COMMAND_CREATE_REQUEST:
+        this._mark_segment_as_pending(address, segment_id);
         this.fire('create_request', {
           address: address,
           segment_id: segment_id,
@@ -367,10 +376,13 @@
         });
         break;
       case COMMAND_CREATE_RESPONSE:
-        source_id = compute_source_id(address, segment_id);
-        if (this._pending_extension_segments.has(source_id)) {
-          original_source = this._pending_extension_segments.get(source_id);
-          this._pending_extension_segments['delete'](source_id);
+        if (!this._pending_segments.has(source_id)) {
+          return;
+        }
+        pending_segment_data = this._pending_segments.get(source_id);
+        if (pending_segment_data.original_source) {
+          original_source = pending_segment_data.original_source;
+          this._unmark_segment_as_pending(address, segment_id);
           this._extend_response(original_source.address, original_source.segment_id, command_data);
           this._add_segments_forwarding_mapping(address, segment_id, original_source.address, original_source.segment_id);
         } else {
@@ -429,20 +441,25 @@
         ref$ = parse_packet_data_header(packet_data_header), command = ref$[0], command_data_length = ref$[1];
         command_data_encrypted = packet_data.slice(packet_data_header_encrypted.length, packet_data_header_encrypted.length + command_data_length);
         this$._decrypt(address, segment_id, address, command_data_encrypted).then(function(command_data){
-          var next_node_address, segment_creation_request_data, next_node_segment_id, next_node_source_id, e;
+          var next_node_address, segment_creation_request_data, next_node_segment_id, original_source, e;
           switch (command) {
           case COMMAND_EXTEND_REQUEST:
             try {
               next_node_address = command_data.subarray(0, this$._address_length);
               segment_creation_request_data = command_data.subarray(this$._address_length);
               next_node_segment_id = this$.create_request(next_node_address, segment_creation_request_data);
-              next_node_source_id = compute_source_id(next_node_address, next_node_segment_id);
-              this$._pending_extension_segments.set(next_node_source_id, {
+              original_source = {
                 address: address,
                 segment_id: segment_id
+              };
+              this$._mark_segment_as_pending.set(next_node_address, next_node_segment_id, {
+                original_source: original_source
               });
             } catch (e$) {
               e = e$;
+              if (!(e instanceof RangeError)) {
+                throw e;
+              }
               this$.create_response(address, segment_id, new Uint8Array);
               return;
             }
@@ -485,6 +502,49 @@
           });
         }
       });
+    }
+    /**
+     * @param {Uint8Array}	address
+     * @param {Uint8Array}	segment_id
+     * @param {object}		data
+     */,
+    _mark_segment_as_pending: function(address, segment_id, data){
+      var source_id, address_string, pending_address_segments, old_pending_segment_id;
+      data == null && (data = {});
+      this._unmark_segment_as_pending(address, segment_id);
+      source_id = compute_source_id(address, segment_id);
+      address_string = address.join('');
+      this._pending_segments.set(source_id, data);
+      if (!this._pending_address_segments.has(address_string)) {
+        this._pending_address_segments.set(address_string, []);
+      }
+      pending_address_segments = this._pending_address_segments.get(address_string);
+      pending_address_segments.push(segment_id);
+      if (pending_address_segments.length > MAX_PENDING_SEGMENTS) {
+        old_pending_segment_id = pending_address_segments.shift();
+        this._unmark_segment_as_pending(address, old_pending_segment_id);
+      }
+    }
+    /**
+     * @param {Uint8Array}	address
+     * @param {Uint8Array}	segment_id
+     */,
+    _unmark_segment_as_pending: function(address, segment_id){
+      var segment_id_string, pending_address_segments, i$, len$, i, existing_segment_id;
+      if (!this._pending_segments.has(source_id)) {
+        return;
+      }
+      this._pending_segments['delete'](source_id);
+      segment_id_string = segment_id.join('');
+      pending_address_segments = this._pending_address_segments.get(address_string);
+      for (i$ = 0, len$ = pending_address_segments.length; i$ < len$; ++i$) {
+        i = i$;
+        existing_segment_id = pending_address_segments[i$];
+        if (existing_segment_id.join('') === segment_id_string) {
+          pending_address_segments.splice(i, 1);
+          return;
+        }
+      }
     }
     /**
      * @param {Uint8Array}	address			Node at which routing path has started

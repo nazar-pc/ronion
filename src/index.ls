@@ -16,6 +16,9 @@ const COMMAND_EXTEND_RESPONSE	= 4
 const COMMAND_DESTROY			= 5
 const COMMAND_DATA				= 6
 
+# How much segments can be in pending state per one address
+const MAX_PENDING_SEGMENTS		= 10
+
 /**
  * @param {Uint8Array} array
  *
@@ -146,8 +149,10 @@ function compute_source_id (address, segment_id)
 	@_outgoing_established_segments		= new Map
 	# Set of incoming established segments (created upon CREATE_REQUEST from previous node)
 	@_incoming_established_segments		= new Set
-	# Map of segments that were created for extension purposes to the node where extension request come from, but didn't receive response from extension yet
-	@_pending_extension_segments		= new Map
+	# Map of segments that were created for some purposes to their data, but were not confirmed yet; up to 10 unconfirmed segments per address are stored
+	@_pending_segments					= new Map
+	# Map of addresses to pending segments for that address, complements `_pending_segments` for convenience
+	@_pending_address_segments			= new Map
 	# Map of segments on which extension has started to the address where routing path is going to be extended, but didn't receive extension confirmation yet
 	@_pending_extensions				= new Map
 	# Map of segments where data can come from to segment where data should be forwarded to if can't be decrypted, each mapping results in 2 elements, one for each direction
@@ -172,7 +177,8 @@ Ronion:: =
 		source_id	= compute_source_id(address, segment_id)
 		packet_data	= packet.subarray(3)
 		# If segment is not established then we don't use encryption yet
-		if @_outgoing_established_segments.has(source_id)
+		source_id	= compute_source_id(address, segment_id)
+		if @_outgoing_established_segments.has(source_id) || @_incoming_established_segments.has(source_id)
 			@_process_packet_data_encrypted(source_id, packet_data)
 		else
 			@_process_packet_data_plaintext(address, segment_id, packet_data)
@@ -185,6 +191,7 @@ Ronion:: =
 	confirm_outgoing_segment_established : (address, segment_id) !->
 		source_id	= compute_source_id(address, segment_id)
 		@_outgoing_established_segments.set(source_id, [address])
+		@_unmark_segment_as_pending(address, segment_id)
 	/**
 	 * Must be called when new segment is established with node that has specified address (after receiving CREATE_REQUEST and sending CREATE_RESPONSE)
 	 *
@@ -194,6 +201,7 @@ Ronion:: =
 	confirm_incoming_segment_established : (address, segment_id) !->
 		source_id	= compute_source_id(address, segment_id)
 		@_incoming_established_segments.add(source_id)
+		@_unmark_segment_as_pending(address, segment_id)
 	/**
 	 * Must be called when new segment is established with node that has specified address
 	 *
@@ -219,21 +227,20 @@ Ronion:: =
 		segment_id	= @_generate_segment_id(address)
 		packet		= generate_packet_plaintext(packet_size, version, segment_id, COMMAND_CREATE_REQUEST, command_data)
 		@fire('send', {address, packet})
+		@_mark_segment_as_pending(address, segment_id)
 		segment_id
 	/**
 	 * @param {Uint8Array} address
 	 *
 	 * @return {Uint8Array}
+	 *
+	 * @throws {RangeError}
 	 */
 	_generate_segment_id : (address) ->
-		for i from 0 til 2^16
+		for i from 0 til 2**16
 			segment_id	= number_to_uint_array(i)
 			source_id	= compute_source_id(address, segment_id)
-			if (
-				!@_outgoing_established_segments.has(source_id) &&
-				!@_pending_extension_segments.has(source_id) &&
-				!@_incoming_established_segments.has(source_id)
-			)
+			if !@_outgoing_established_segments.has(source_id) && !@_pending_segments.has(source_id) && !@_incoming_established_segments.has(source_id)
 				return segment_id
 		throw new RangeError('Out of possible segment IDs')
 	/**
@@ -312,12 +319,16 @@ Ronion:: =
 		[command, command_data]	= parse_packet_data_plaintext(packet_data)
 		switch command
 			case COMMAND_CREATE_REQUEST
+				@_mark_segment_as_pending(address, segment_id)
 				@fire('create_request', {address, segment_id, command_data})
 			case COMMAND_CREATE_RESPONSE
-				source_id	= compute_source_id(address, segment_id)
-				if @_pending_extension_segments.has(source_id)
-					original_source	= @_pending_extension_segments.get(source_id)
-					@_pending_extension_segments.delete(source_id)
+				# Do nothing if we don't expect CREATE_RESPONSE
+				if !@_pending_segments.has(source_id)
+					return
+				pending_segment_data	= @_pending_segments.get(source_id)
+				if pending_segment_data.original_source
+					original_source	= pending_segment_data.original_source
+					@_unmark_segment_as_pending(address, segment_id)
 					@_extend_response(original_source.address, original_source.segment_id, command_data)
 					@_add_segments_forwarding_mapping(address, segment_id, original_source.address, original_source.segment_id)
 				else
@@ -371,9 +382,12 @@ Ronion:: =
 							next_node_address				= command_data.subarray(0, @_address_length)
 							segment_creation_request_data	= command_data.subarray(@_address_length)
 							next_node_segment_id			= @create_request(next_node_address, segment_creation_request_data)
-							next_node_source_id				= compute_source_id(next_node_address, next_node_segment_id)
-							@_pending_extension_segments.set(next_node_source_id, {address, segment_id})
-						catch
+							original_source					= {address, segment_id}
+							# segment will be marked as pending in `create_request()` call, but here we override it with additional data
+							@_mark_segment_as_pending.set(next_node_address, next_node_segment_id, {original_source})
+						catch e
+							if !(e instanceof RangeError)
+								throw e
 							# Send empty CREATE_RESPONSE indicating that it is not possible to extend routing path
 							@create_response(address, segment_id, new Uint8Array)
 							return
@@ -393,7 +407,41 @@ Ronion:: =
 					[target_address, target_segment_id]	= @_segments_forwarding_mapping.get(source_id)
 					packet								= generate_packet(@_packet_size, @_version, target_segment_id, packet_data)
 					@fire('send', {address : target_address, packet})
-		# TODO: forward data that can't be decrypted and there is mapping to the next node
+	/**
+	 * @param {Uint8Array}	address
+	 * @param {Uint8Array}	segment_id
+	 * @param {object}		data
+	 */
+	_mark_segment_as_pending : (address, segment_id, data = {}) !->
+		# Drop any old mark if it happens to exist
+		@_unmark_segment_as_pending(address, segment_id)
+
+		source_id		= compute_source_id(address, segment_id)
+		address_string	= address.join('')
+		@_pending_segments.set(source_id, data)
+
+		if !@_pending_address_segments.has(address_string)
+			@_pending_address_segments.set(address_string, [])
+		pending_address_segments	= @_pending_address_segments.get(address_string)
+		pending_address_segments.push(segment_id)
+		if pending_address_segments.length > MAX_PENDING_SEGMENTS
+			old_pending_segment_id	= pending_address_segments.shift()
+			@_unmark_segment_as_pending(address, old_pending_segment_id)
+	/**
+	 * @param {Uint8Array}	address
+	 * @param {Uint8Array}	segment_id
+	 */
+	_unmark_segment_as_pending : (address, segment_id) !->
+		if !@_pending_segments.has(source_id)
+			return
+		@_pending_segments.delete(source_id)
+
+		segment_id_string			= segment_id.join('')
+		pending_address_segments	= @_pending_address_segments.get(address_string)
+		for existing_segment_id, i in pending_address_segments
+			if existing_segment_id.join('') == segment_id_string
+				pending_address_segments.splice(i, 1)
+				return
 	/**
 	 * @param {Uint8Array}	address			Node at which routing path has started
 	 * @param {Uint8Array}	segment_id		Same segment ID as returned by CREATE_REQUEST
