@@ -66,18 +66,18 @@
    * @param {number}		version
    * @param {Uint8Array}	segment_id
    * @param {Uint8Array}	packet_data_header
-   * @param {Uint8Array}	packet_data
+   * @param {Uint8Array}	command_data
    *
    * @return {Uint8Array}
    */
-  function generate_packet(packet_size, version, segment_id, packet_data_header, packet_data){
+  function generate_packet(packet_size, version, segment_id, packet_data_header, command_data){
     var x$, packet, bytes_written, random_bytes_padding_length;
     x$ = packet = new Uint8Array(packet_size);
     x$.set([version]);
     x$.set(segment_id, 1);
     x$.set(packet_data_header, 3);
-    x$.set(packet_data, 3 + packet_data_header.length);
-    bytes_written = 3 + packet_data_header.length + packet_data.length;
+    x$.set(command_data, 3 + packet_data_header.length);
+    bytes_written = 3 + packet_data_header.length + command_data.length;
     random_bytes_padding_length = packet_size - bytes_written;
     if (random_bytes_padding_length) {
       packet.set(randombytes(random_bytes_padding_length), bytes_written);
@@ -167,18 +167,18 @@
     /**
      * Must be called in order to start new routing path, sends CREATE_REQUEST
      *
-     * @param {Uint8Array}	address		Node at which to start routing path
-     * @param {Uint8Array}	data
+     * @param {Uint8Array}	address			Node at which to start routing path
+     * @param {Uint8Array}	command_data
      *
      * @return {Uint8Array} segment_id Generated segment ID that can be later used for routing path extension
      *
      * @throws {RangeError}
      */,
-    create_request: function(address, data){
+    create_request: function(address, command_data){
       var segment_id, packet_data_header, packet;
       segment_id = this._generate_segment_id(address);
-      packet_data_header = generate_packet_data_header(COMMAND_CREATE_REQUEST, data.length);
-      packet = generate_packet(this._packet_size, this._version, segment_id, packet_data_header, data);
+      packet_data_header = generate_packet_data_header(COMMAND_CREATE_REQUEST, command_data.length);
+      packet = generate_packet(this._packet_size, this._version, segment_id, packet_data_header, command_data);
       this.fire('send', {
         address: address,
         packet: packet
@@ -205,43 +205,62 @@
     /**
      * Must be called in order to respond to CREATE_RESPONSE
      *
-     * @param {Uint8Array}	address		Node from which CREATE_REQUEST come from
-     * @param {Uint8Array}	segment_id	Same segment ID as in CREATE_REQUEST
-     * @param {Uint8Array}	data
+     * @param {Uint8Array}	address			Node from which CREATE_REQUEST come from
+     * @param {Uint8Array}	segment_id		Same segment ID as in CREATE_REQUEST
+     * @param {Uint8Array}	command_data
      */,
-    create_response: function(address, segment_id, data){
+    create_response: function(address, segment_id, command_data){
       var packet_data_header, packet;
-      packet_data_header = generate_packet_data_header(COMMAND_CREATE_RESPONSE, data.length);
-      packet = generate_packet(this._packet_size, this._version, segment_id, packet_data_header, data);
+      packet_data_header = generate_packet_data_header(COMMAND_CREATE_RESPONSE, command_data.length);
+      packet = generate_packet(this._packet_size, this._version, segment_id, packet_data_header, command_data);
       this.fire('send', {
         address: address,
         packet: packet
       });
     }
     /**
-     * Must be called in order to extend routing path by one more segment
+     * Must be called in order to extend routing path by one more segment, sends EXTEND_REQUEST
      *
      * @param {Uint8Array}	address				Node at which routing path has started
      * @param {Uint8Array}	segment_id			Same segment ID as returned by CREATE_REQUEST
      * @param {Uint8Array}	next_node_address	Node to which routing path will be extended from current last node
-     * @param {Uint8Array}	data
+     * @param {Uint8Array}	command_data
      *
      * @throws {ReferenceError}
      */,
-    extend_request: function(address, segment_id, next_node_address, data){
+    extend_request: function(address, segment_id, next_node_address, command_data){
       var source_id, target_address, packet_data_header, this$ = this;
       source_id = compute_source_id(address, segment_id);
       if (!this._established_segments.has(source_id)) {
         throw new ReferenceError('There is no such segment established');
       }
       target_address = this._established_segments.get(source_id).slice(-1)[0];
-      packet_data_header = generate_packet_data_header(COMMAND_EXTEND_REQUEST, data.length);
+      packet_data_header = generate_packet_data_header(COMMAND_EXTEND_REQUEST, command_data.length);
       this._encrypt(address, segment_id, target_address, packet_data_header, function(packet_data_header_encrypted){
         var x$, command_data;
-        x$ = command_data = new Uint8Array(next_node_address.length + data.length);
+        x$ = command_data = new Uint8Array(next_node_address.length + command_data.length);
         x$.set(next_node_address);
-        x$.set(data, next_node_address.length);
+        x$.set(command_data, next_node_address.length);
         this$._encrypt(address, segment_id, target_address, command_data, function(command_data_encrypted){
+          var packet;
+          packet = generate_packet(this$._packet_size, this$._version, segment_id, packet_data_header_encrypted, command_data_encrypted);
+          this$.fire('send', {
+            address: address,
+            packet: packet
+          });
+        });
+      });
+    }
+    /**
+     * @param {Uint8Array}	address
+     * @param {Uint8Array}	segment_id
+     * @param {Uint8Array}	command_data
+     */,
+    _extend_response: function(address, segment_id, command_data){
+      var packet_data_header, this$ = this;
+      packet_data_header = generate_packet_data_header(COMMAND_EXTEND_RESPONSE, command_data.length);
+      this._encrypt(address, segment_id, address, packet_data_header, function(packet_data_header_encrypted){
+        this$._encrypt(address, segment_id, address, command_data, function(command_data_encrypted){
           var packet;
           packet = generate_packet(this$._packet_size, this$._version, segment_id, packet_data_header_encrypted, command_data_encrypted);
           this$.fire('send', {
@@ -264,7 +283,7 @@
         this.fire('create_request', {
           address: address,
           segment_id: segment_id,
-          data: command_data
+          command_data: command_data
         });
         break;
       case COMMAND_CREATE_RESPONSE:
@@ -272,13 +291,13 @@
         if (this._waiting_segments.has(source_id)) {
           original_source = this._waiting_segments.get(source_id);
           this._waiting_segments['delete'](source_id);
-          this.create_response(original_source.address, original_source.segment_id, command_data);
+          this._extend_response(original_source.address, original_source.segment_id, command_data);
           this._add_segments_mapping(address, segment_id, original_source.address, original_source.segment_id);
         } else {
           this.fire('create_response', {
             address: address,
             segment_id: segment_id,
-            data: command_data
+            command_data: command_data
           });
         }
       }
@@ -352,7 +371,7 @@
             this$.fire('data', {
               address: address,
               segment_id: segment_id,
-              data: command_data
+              command_data: command_data
             });
           }
         });
