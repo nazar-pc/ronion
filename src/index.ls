@@ -226,11 +226,11 @@ Ronion:: =
 			throw new ReferenceError('There is no such segment established')
 		target_address					= @_established_segments.get(source_id).slice(-1)[0]
 		packet_data_header				= generate_packet_data_header(COMMAND_EXTEND_REQUEST, command_data.length)
-		(packet_data_header_encrypted)	<~! @_encrypt(address, segment_id, target_address, packet_data_header)
+		(packet_data_header_encrypted)	<~! @_encrypt(address, segment_id, target_address, packet_data_header).then
 		command_data					= new Uint8Array(next_node_address.length + command_data.length)
 			..set(next_node_address)
 			..set(command_data, next_node_address.length)
-		(command_data_encrypted)		<~! @_encrypt(address, segment_id, target_address, command_data)
+		(command_data_encrypted)		<~! @_encrypt(address, segment_id, target_address, command_data).then
 		packet							= generate_packet(@_packet_size, @_version, segment_id, packet_data_header_encrypted, command_data_encrypted)
 		@fire('send', {address, packet})
 		@_pending_extensions.set(source_id, next_node_address)
@@ -241,8 +241,8 @@ Ronion:: =
 	 */
 	_extend_response : (address, segment_id, command_data) !->
 		packet_data_header				= generate_packet_data_header(COMMAND_EXTEND_RESPONSE, command_data.length)
-		(packet_data_header_encrypted)	<~! @_encrypt(address, segment_id, address, packet_data_header)
-		(command_data_encrypted)		<~! @_encrypt(address, segment_id, address, command_data)
+		(packet_data_header_encrypted)	<~! @_encrypt(address, segment_id, address, packet_data_header).then
+		(command_data_encrypted)		<~! @_encrypt(address, segment_id, address, command_data).then
 		packet							= generate_packet(@_packet_size, @_version, segment_id, packet_data_header_encrypted, command_data_encrypted)
 		@fire('send', {address, packet})
 	/**
@@ -297,10 +297,10 @@ Ronion:: =
 	_process_packet_data_encrypted : (address, segment_id, packet_data) !->
 		# Packet data header size + MAC
 		packet_data_header_encrypted	= packet_data.slice(0, 3 + @_mac_length)
-		(packet_data_header)			<~! @_decrypt(address, segment_id, address, packet_data_header_encrypted)
+		(packet_data_header)			<~! @_decrypt(address, segment_id, address, packet_data_header_encrypted).then
 		[command, command_data_length]	= parse_packet_data_header(packet_data_header)
 		command_data_encrypted			= packet_data.slice(packet_data_header_encrypted.length, packet_data_header_encrypted.length + command_data_length)
-		(command_data)					<~! @_decrypt(address, segment_id, address, command_data_encrypted)
+		(command_data)					<~! @_decrypt(address, segment_id, address, command_data_encrypted).then
 		switch command
 			case COMMAND_EXTEND_REQUEST
 				try

@@ -248,12 +248,12 @@
       }
       target_address = this._established_segments.get(source_id).slice(-1)[0];
       packet_data_header = generate_packet_data_header(COMMAND_EXTEND_REQUEST, command_data.length);
-      this._encrypt(address, segment_id, target_address, packet_data_header, function(packet_data_header_encrypted){
+      this._encrypt(address, segment_id, target_address, packet_data_header).then(function(packet_data_header_encrypted){
         var x$, command_data;
         x$ = command_data = new Uint8Array(next_node_address.length + command_data.length);
         x$.set(next_node_address);
         x$.set(command_data, next_node_address.length);
-        this$._encrypt(address, segment_id, target_address, command_data, function(command_data_encrypted){
+        this$._encrypt(address, segment_id, target_address, command_data).then(function(command_data_encrypted){
           var packet;
           packet = generate_packet(this$._packet_size, this$._version, segment_id, packet_data_header_encrypted, command_data_encrypted);
           this$.fire('send', {
@@ -272,8 +272,8 @@
     _extend_response: function(address, segment_id, command_data){
       var packet_data_header, this$ = this;
       packet_data_header = generate_packet_data_header(COMMAND_EXTEND_RESPONSE, command_data.length);
-      this._encrypt(address, segment_id, address, packet_data_header, function(packet_data_header_encrypted){
-        this$._encrypt(address, segment_id, address, command_data, function(command_data_encrypted){
+      this._encrypt(address, segment_id, address, packet_data_header).then(function(packet_data_header_encrypted){
+        this$._encrypt(address, segment_id, address, command_data).then(function(command_data_encrypted){
           var packet;
           packet = generate_packet(this$._packet_size, this$._version, segment_id, packet_data_header_encrypted, command_data_encrypted);
           this$.fire('send', {
@@ -353,11 +353,11 @@
     _process_packet_data_encrypted: function(address, segment_id, packet_data){
       var packet_data_header_encrypted, this$ = this;
       packet_data_header_encrypted = packet_data.slice(0, 3 + this._mac_length);
-      this._decrypt(address, segment_id, address, packet_data_header_encrypted, function(packet_data_header){
+      this._decrypt(address, segment_id, address, packet_data_header_encrypted).then(function(packet_data_header){
         var ref$, command, command_data_length, command_data_encrypted;
         ref$ = parse_packet_data_header(packet_data_header), command = ref$[0], command_data_length = ref$[1];
         command_data_encrypted = packet_data.slice(packet_data_header_encrypted.length, packet_data_header_encrypted.length + command_data_length);
-        this$._decrypt(address, segment_id, address, command_data_encrypted, function(command_data){
+        this$._decrypt(address, segment_id, address, command_data_encrypted).then(function(command_data){
           var next_node_address, segment_creation_request_data, next_node_segment_id, next_node_source_id, e, source_id;
           switch (command) {
           case COMMAND_EXTEND_REQUEST:
