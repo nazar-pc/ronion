@@ -65,22 +65,44 @@ function parse_packet_data_plaintext (packet_data)
  * @param {number}		packet_size
  * @param {number}		version
  * @param {Uint8Array}	segment_id
+ * @param {number}		command
+ * @param {Uint8Array}	command_data
+ *
+ * @return {Uint8Array}
+ */
+function generate_packet_plaintext (packet_size, version, segment_id, command, command_data)
+	packet_data_header	= generate_packet_data_header(command, command_data.length)
+	packet_data			= generate_packet_data(packet_data_header, command_data)
+	generate_packet(@_packet_size, @_version, segment_id, packet_data)
+/**
+ * @param {number}		packet_size
+ * @param {number}		version
+ * @param {Uint8Array}	segment_id
+ * @param {Uint8Array}	packet_data
+ *
+ * @return {Uint8Array}
+ */
+function generate_packet (packet_size, version, segment_id, packet_data)
+	packet						= new Uint8Array(packet_size)
+		..set([version])
+		..set(segment_id, 1)
+		..set(packet_data, 3)
+	bytes_written				= 3 + packet_data.length
+	random_bytes_padding_length	= packet_size - bytes_written
+	if random_bytes_padding_length
+		packet.set(randombytes(random_bytes_padding_length), bytes_written)
+	packet
+
+/**
  * @param {Uint8Array}	packet_data_header
  * @param {Uint8Array}	command_data
  *
  * @return {Uint8Array}
  */
-function generate_packet (packet_size, version, segment_id, packet_data_header, command_data)
-	packet						= new Uint8Array(packet_size)
-		..set([version])
-		..set(segment_id, 1)
-		..set(packet_data_header, 3)
-		..set(command_data, 3 + packet_data_header.length)
-	bytes_written				= 3 + packet_data_header.length + command_data.length
-	random_bytes_padding_length	= packet_size - bytes_written
-	if random_bytes_padding_length
-		packet.set(randombytes(random_bytes_padding_length), bytes_written)
-	packet
+function generate_packet_data (packet_data_header, command_data)
+	new Uint8Array(packet_data_header.length + command_data.length)
+		..set(packet_data_header)
+		..set(command_data, packet_data_header.length)
 
 /**
  * @param {number}	command
@@ -182,9 +204,8 @@ Ronion:: =
 	 * @throws {RangeError}
 	 */
 	create_request : (address, command_data) ->
-		segment_id			= @_generate_segment_id(address)
-		packet_data_header	= generate_packet_data_header(COMMAND_CREATE_REQUEST, command_data.length)
-		packet				= generate_packet(@_packet_size, @_version, segment_id, packet_data_header, command_data)
+		segment_id	= @_generate_segment_id(address)
+		packet		= generate_packet_plaintext(packet_size, version, segment_id, COMMAND_CREATE_REQUEST, command_data)
 		@fire('send', {address, packet})
 		segment_id
 	/**
@@ -207,8 +228,7 @@ Ronion:: =
 	 * @param {Uint8Array}	command_data
 	 */
 	create_response : (address, segment_id, command_data) !->
-		packet_data_header	= generate_packet_data_header(COMMAND_CREATE_RESPONSE, command_data.length)
-		packet				= generate_packet(@_packet_size, @_version, segment_id, packet_data_header, command_data)
+		packet	= generate_packet_plaintext(packet_size, version, segment_id, COMMAND_CREATE_RESPONSE, command_data)
 		@fire('send', {address, packet})
 	/**
 	 * Must be called in order to extend routing path by one more segment, sends EXTEND_REQUEST
@@ -231,7 +251,8 @@ Ronion:: =
 			..set(next_node_address)
 			..set(command_data, next_node_address.length)
 		(command_data_encrypted)		<~! @_encrypt(address, segment_id, target_address, command_data).then
-		packet							= generate_packet(@_packet_size, @_version, segment_id, packet_data_header_encrypted, command_data_encrypted)
+		packet_data						= generate_packet_data(packet_data_header_encrypted, command_data_encrypted)
+		packet							= generate_packet(@_packet_size, @_version, segment_id, packet_data)
 		@fire('send', {address, packet})
 		@_pending_extensions.set(source_id, next_node_address)
 	/**
@@ -243,7 +264,8 @@ Ronion:: =
 		packet_data_header				= generate_packet_data_header(COMMAND_EXTEND_RESPONSE, command_data.length)
 		(packet_data_header_encrypted)	<~! @_encrypt(address, segment_id, address, packet_data_header).then
 		(command_data_encrypted)		<~! @_encrypt(address, segment_id, address, command_data).then
-		packet							= generate_packet(@_packet_size, @_version, segment_id, packet_data_header_encrypted, command_data_encrypted)
+		packet_data						= generate_packet_data(packet_data_header_encrypted, command_data_encrypted)
+		packet							= generate_packet(@_packet_size, @_version, segment_id, packet_data)
 		@fire('send', {address, packet})
 	/**
 	 * @param {Uint8Array}	address
@@ -277,8 +299,8 @@ Ronion:: =
 	_add_segments_forwarding_mapping : (address1, segment_id1, address2, segment_id2) !->
 		source_id1	= compute_source_id(address1, segment_id1)
 		source_id2	= compute_source_id(address2, segment_id2)
-		@_segments_forwarding_mapping.set(source_id1, source_id2)
-		@_segments_forwarding_mapping.set(source_id2, source_id1)
+		@_segments_forwarding_mapping.set(source_id1, [address2, segment_id2])
+		@_segments_forwarding_mapping.set(source_id2, [address1, segment_id1])
 	/**
 	 * @param {Uint8Array}	address
 	 * @param {Uint8Array}	segment_id
@@ -286,7 +308,8 @@ Ronion:: =
 	_del_segments_forwarding_mapping : (address, segment_id) !->
 		source_id1	= compute_source_id(address, segment_id)
 		if @_segments_forwarding_mapping.has(source_id1)
-			source_id2	= @_segments_forwarding_mapping.get(source_id1)
+			[address2, segment_id2]	= @_segments_forwarding_mapping.get(source_id1)
+			source_id2				= compute_source_id(address2, segment_id2)
 			@_segments_forwarding_mapping.delete(source_id1)
 			@_segments_forwarding_mapping.delete(source_id2)
 	/**
@@ -297,31 +320,38 @@ Ronion:: =
 	_process_packet_data_encrypted : (address, segment_id, packet_data) !->
 		# Packet data header size + MAC
 		packet_data_header_encrypted	= packet_data.slice(0, 3 + @_mac_length)
-		(packet_data_header)			<~! @_decrypt(address, segment_id, address, packet_data_header_encrypted).then
-		[command, command_data_length]	= parse_packet_data_header(packet_data_header)
-		command_data_encrypted			= packet_data.slice(packet_data_header_encrypted.length, packet_data_header_encrypted.length + command_data_length)
-		(command_data)					<~! @_decrypt(address, segment_id, address, command_data_encrypted).then
-		switch command
-			case COMMAND_EXTEND_REQUEST
-				try
-					next_node_address				= command_data.subarray(0, @_address_length)
-					segment_creation_request_data	= command_data.subarray(@_address_length)
-					next_node_segment_id			= @create_request(next_node_address, segment_creation_request_data)
-					next_node_source_id				= compute_source_id(next_node_address, next_node_segment_id)
-					@_pending_extension_segments.set(next_node_source_id, {address, segment_id})
-				catch
-					# Send empty CREATE_RESPONSE indicating that it is not possible to extend routing path
-					@create_response(address, segment_id, new Uint8Array)
-					return
-			case COMMAND_EXTEND_RESPONSE
+		@_decrypt(address, segment_id, address, packet_data_header_encrypted)
+			.then (packet_data_header) !~>
+				[command, command_data_length]	= parse_packet_data_header(packet_data_header)
+				command_data_encrypted			= packet_data.slice(packet_data_header_encrypted.length, packet_data_header_encrypted.length + command_data_length)
+				(command_data)					<~! @_decrypt(address, segment_id, address, command_data_encrypted).then
+				switch command
+					case COMMAND_EXTEND_REQUEST
+						try
+							next_node_address				= command_data.subarray(0, @_address_length)
+							segment_creation_request_data	= command_data.subarray(@_address_length)
+							next_node_segment_id			= @create_request(next_node_address, segment_creation_request_data)
+							next_node_source_id				= compute_source_id(next_node_address, next_node_segment_id)
+							@_pending_extension_segments.set(next_node_source_id, {address, segment_id})
+						catch
+							# Send empty CREATE_RESPONSE indicating that it is not possible to extend routing path
+							@create_response(address, segment_id, new Uint8Array)
+							return
+					case COMMAND_EXTEND_RESPONSE
+						source_id	= compute_source_id(address, segment_id)
+						if @_pending_extensions.has(source_id)
+							@fire('extend_response', {address, segment_id, command_data})
+					case COMMAND_DESTROY
+						# TODO
+						void
+					case COMMAND_DATA
+						@fire('data', {address, segment_id, command_data})
+			.catch !~>
 				source_id	= compute_source_id(address, segment_id)
-				if @_pending_extensions.has(source_id)
-					@fire('extend_response', {address, segment_id, command_data})
-			case COMMAND_DESTROY
-				# TODO
-				void
-			case COMMAND_DATA
-				@fire('data', {address, segment_id, command_data})
+				if @_segments_forwarding_mapping.has(source_id)
+					[target_address, target_segment_id]	= @_segments_forwarding_mapping.get(source_id)
+					packet								= generate_packet(@_packet_size, @_version, target_segment_id, packet_data)
+					@fire('send', {address : target_address, packet})
 		# TODO: forward data that can't be decrypted and there is mapping to the next node
 	/**
 	 * @param {Uint8Array}	address			Node at which routing path has started

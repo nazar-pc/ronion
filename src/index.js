@@ -65,24 +65,50 @@
    * @param {number}		packet_size
    * @param {number}		version
    * @param {Uint8Array}	segment_id
-   * @param {Uint8Array}	packet_data_header
+   * @param {number}		command
    * @param {Uint8Array}	command_data
    *
    * @return {Uint8Array}
    */
-  function generate_packet(packet_size, version, segment_id, packet_data_header, command_data){
+  function generate_packet_plaintext(packet_size, version, segment_id, command, command_data){
+    var packet_data_header, packet_data;
+    packet_data_header = generate_packet_data_header(command, command_data.length);
+    packet_data = generate_packet_data(packet_data_header, command_data);
+    return generate_packet(this._packet_size, this._version, segment_id, packet_data);
+  }
+  /**
+   * @param {number}		packet_size
+   * @param {number}		version
+   * @param {Uint8Array}	segment_id
+   * @param {Uint8Array}	packet_data
+   *
+   * @return {Uint8Array}
+   */
+  function generate_packet(packet_size, version, segment_id, packet_data){
     var x$, packet, bytes_written, random_bytes_padding_length;
     x$ = packet = new Uint8Array(packet_size);
     x$.set([version]);
     x$.set(segment_id, 1);
-    x$.set(packet_data_header, 3);
-    x$.set(command_data, 3 + packet_data_header.length);
-    bytes_written = 3 + packet_data_header.length + command_data.length;
+    x$.set(packet_data, 3);
+    bytes_written = 3 + packet_data.length;
     random_bytes_padding_length = packet_size - bytes_written;
     if (random_bytes_padding_length) {
       packet.set(randombytes(random_bytes_padding_length), bytes_written);
     }
     return packet;
+  }
+  /**
+   * @param {Uint8Array}	packet_data_header
+   * @param {Uint8Array}	command_data
+   *
+   * @return {Uint8Array}
+   */
+  function generate_packet_data(packet_data_header, command_data){
+    var x$;
+    x$ = new Uint8Array(packet_data_header.length + command_data.length);
+    x$.set(packet_data_header);
+    x$.set(command_data, packet_data_header.length);
+    return x$;
   }
   /**
    * @param {number}	command
@@ -187,10 +213,9 @@
      * @throws {RangeError}
      */,
     create_request: function(address, command_data){
-      var segment_id, packet_data_header, packet;
+      var segment_id, packet;
       segment_id = this._generate_segment_id(address);
-      packet_data_header = generate_packet_data_header(COMMAND_CREATE_REQUEST, command_data.length);
-      packet = generate_packet(this._packet_size, this._version, segment_id, packet_data_header, command_data);
+      packet = generate_packet_plaintext(packet_size, version, segment_id, COMMAND_CREATE_REQUEST, command_data);
       this.fire('send', {
         address: address,
         packet: packet
@@ -222,9 +247,8 @@
      * @param {Uint8Array}	command_data
      */,
     create_response: function(address, segment_id, command_data){
-      var packet_data_header, packet;
-      packet_data_header = generate_packet_data_header(COMMAND_CREATE_RESPONSE, command_data.length);
-      packet = generate_packet(this._packet_size, this._version, segment_id, packet_data_header, command_data);
+      var packet;
+      packet = generate_packet_plaintext(packet_size, version, segment_id, COMMAND_CREATE_RESPONSE, command_data);
       this.fire('send', {
         address: address,
         packet: packet
@@ -254,8 +278,9 @@
         x$.set(next_node_address);
         x$.set(command_data, next_node_address.length);
         this$._encrypt(address, segment_id, target_address, command_data).then(function(command_data_encrypted){
-          var packet;
-          packet = generate_packet(this$._packet_size, this$._version, segment_id, packet_data_header_encrypted, command_data_encrypted);
+          var packet_data, packet;
+          packet_data = generate_packet_data(packet_data_header_encrypted, command_data_encrypted);
+          packet = generate_packet(this$._packet_size, this$._version, segment_id, packet_data);
           this$.fire('send', {
             address: address,
             packet: packet
@@ -274,8 +299,9 @@
       packet_data_header = generate_packet_data_header(COMMAND_EXTEND_RESPONSE, command_data.length);
       this._encrypt(address, segment_id, address, packet_data_header).then(function(packet_data_header_encrypted){
         this$._encrypt(address, segment_id, address, command_data).then(function(command_data_encrypted){
-          var packet;
-          packet = generate_packet(this$._packet_size, this$._version, segment_id, packet_data_header_encrypted, command_data_encrypted);
+          var packet_data, packet;
+          packet_data = generate_packet_data(packet_data_header_encrypted, command_data_encrypted);
+          packet = generate_packet(this$._packet_size, this$._version, segment_id, packet_data);
           this$.fire('send', {
             address: address,
             packet: packet
@@ -329,18 +355,19 @@
       var source_id1, source_id2;
       source_id1 = compute_source_id(address1, segment_id1);
       source_id2 = compute_source_id(address2, segment_id2);
-      this._segments_forwarding_mapping.set(source_id1, source_id2);
-      this._segments_forwarding_mapping.set(source_id2, source_id1);
+      this._segments_forwarding_mapping.set(source_id1, [address2, segment_id2]);
+      this._segments_forwarding_mapping.set(source_id2, [address1, segment_id1]);
     }
     /**
      * @param {Uint8Array}	address
      * @param {Uint8Array}	segment_id
      */,
     _del_segments_forwarding_mapping: function(address, segment_id){
-      var source_id1, source_id2;
+      var source_id1, ref$, address2, segment_id2, source_id2;
       source_id1 = compute_source_id(address, segment_id);
       if (this._segments_forwarding_mapping.has(source_id1)) {
-        source_id2 = this._segments_forwarding_mapping.get(source_id1);
+        ref$ = this._segments_forwarding_mapping.get(source_id1), address2 = ref$[0], segment_id2 = ref$[1];
+        source_id2 = compute_source_id(address2, segment_id2);
         this._segments_forwarding_mapping['delete'](source_id1);
         this._segments_forwarding_mapping['delete'](source_id2);
       }
@@ -396,6 +423,17 @@
             });
           }
         });
+      })['catch'](function(){
+        var source_id, ref$, target_address, target_segment_id, packet;
+        source_id = compute_source_id(address, segment_id);
+        if (this$._segments_forwarding_mapping.has(source_id)) {
+          ref$ = this$._segments_forwarding_mapping.get(source_id), target_address = ref$[0], target_segment_id = ref$[1];
+          packet = generate_packet(this$._packet_size, this$._version, target_segment_id, packet_data);
+          this$.fire('send', {
+            address: target_address,
+            packet: packet
+          });
+        }
       });
     }
     /**
