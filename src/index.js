@@ -6,7 +6,7 @@
  * @license   MIT License, see license.txt
  */
 (function(){
-  var asyncEventer, randombytes, COMMAND_CREATE_REQUEST, COMMAND_CREATE_RESPONSE, COMMAND_EXTEND_REQUEST, COMMAND_EXTEND_RESPONSE, COMMAND_DESTROY, COMMAND_DATA;
+  var asyncEventer, randombytes, COMMAND_CREATE_REQUEST, COMMAND_CREATE_RESPONSE, COMMAND_EXTEND_REQUEST, COMMAND_EXTEND_RESPONSE, COMMAND_DESTROY, COMMAND_DATA, this$ = this;
   asyncEventer = require('async-eventer');
   randombytes = require('randombytes');
   module.exports = Ronion;
@@ -149,7 +149,8 @@
     this._packet_size = packet_size;
     this._address_length = address_length;
     this._mac_length = mac_length;
-    this._established_segments = new Map;
+    this._outgoing_established_segments = new Map;
+    this._incoming_established_segments = new Set;
     this._pending_extension_segments = new Map;
     this._pending_extensions = new Map;
     this._segments_forwarding_mapping = new Map;
@@ -172,22 +173,33 @@
       }
       source_id = compute_source_id(address, segment_id);
       packet_data = packet.subarray(3);
-      if (this._established_segments.has(source_id)) {
+      if (this._outgoing_established_segments.has(source_id)) {
         this._process_packet_data_encrypted(source_id, packet_data);
       } else {
         this._process_packet_data_plaintext(address, segment_id, packet_data);
       }
     }
     /**
-     * Must be called when new segment is established with node that has specified address
+     * Must be called when new segment is established with node that has specified address (after sending CREATE_REQUEST and receiving CREATE_RESPONSE)
      *
      * @param {Uint8Array}	address
      * @param {Uint8Array}	segment_id
      */,
-    confirm_established_segment: function(address, segment_id){
+    confirm_outgoing_segment_established: function(address, segment_id){
       var source_id;
       source_id = compute_source_id(address, segment_id);
-      this._established_segments.set(source_id, [address]);
+      this._outgoing_established_segments.set(source_id, [address]);
+    }
+    /**
+     * Must be called when new segment is established with node that has specified address (after receiving CREATE_REQUEST and sending CREATE_RESPONSE)
+     *
+     * @param {Uint8Array}	address
+     * @param {Uint8Array}	segment_id
+     */,
+    confirm_incoming_segment_established: function(address, segment_id){
+      var source_id;
+      source_id = compute_source_id(address, segment_id);
+      this._incoming_established_segments.add(source_id);
     }
     /**
      * Must be called when new segment is established with node that has specified address
@@ -199,11 +211,11 @@
       var source_id, next_node_address;
       source_id = compute_source_id(address, segment_id);
       next_node_address = this._pending_extensions.get(source_id);
-      this._established_segments.get(source_id).push(next_node_address);
+      this._outgoing_established_segments.get(source_id).push(next_node_address);
       this._pending_extensions['delete'](source_id);
     }
     /**
-     * Must be called in order to start new routing path, sends CREATE_REQUEST
+     * Must be called in order to create new routing path that starts with specified address and segment ID, sends CREATE_REQUEST
      *
      * @param {Uint8Array}	address			Node at which to start routing path
      * @param {Uint8Array}	command_data
@@ -233,7 +245,7 @@
         i = i$;
         segment_id = number_to_uint_array(i);
         source_id = compute_source_id(address, segment_id);
-        if (!this._established_segments.has(source_id) && !this._pending_extension_segments.has(source_id)) {
+        if (!this._outgoing_established_segments.has(source_id) && !this._pending_extension_segments.has(source_id) && !this._incoming_established_segments.has(source_id)) {
           return segment_id;
         }
       }
@@ -255,7 +267,7 @@
       });
     }
     /**
-     * Must be called in order to extend routing path by one more segment, sends EXTEND_REQUEST
+     * Must be called in order to extend routing path that starts with specified address and segment ID by one more segment, sends EXTEND_REQUEST
      *
      * @param {Uint8Array}	address				Node at which routing path has started
      * @param {Uint8Array}	segment_id			Same segment ID as returned by CREATE_REQUEST
@@ -267,10 +279,10 @@
     extend_request: function(address, segment_id, next_node_address, command_data){
       var source_id, target_address, packet_data_header, this$ = this;
       source_id = compute_source_id(address, segment_id);
-      if (!this._established_segments.has(source_id)) {
+      if (!this._outgoing_established_segments.has(source_id)) {
         throw new ReferenceError('There is no such segment established');
       }
-      target_address = this._established_segments.get(source_id).slice(-1)[0];
+      target_address = this._outgoing_established_segments.get(source_id).slice(-1)[0];
       packet_data_header = generate_packet_data_header(COMMAND_EXTEND_REQUEST, command_data.length);
       this._encrypt(address, segment_id, target_address, packet_data_header).then(function(packet_data_header_encrypted){
         var x$, command_data;
@@ -299,6 +311,35 @@
       packet_data_header = generate_packet_data_header(COMMAND_EXTEND_RESPONSE, command_data.length);
       this._encrypt(address, segment_id, address, packet_data_header).then(function(packet_data_header_encrypted){
         this$._encrypt(address, segment_id, address, command_data).then(function(command_data_encrypted){
+          var packet_data, packet;
+          packet_data = generate_packet_data(packet_data_header_encrypted, command_data_encrypted);
+          packet = generate_packet(this$._packet_size, this$._version, segment_id, packet_data);
+          this$.fire('send', {
+            address: address,
+            packet: packet
+          });
+        });
+      });
+    }
+    /**
+     * Must be called when it is needed to destroy last segment in routing path that starts with specified address and segment ID
+     *
+     * @param {Uint8Array}	address		Node at which routing path has started
+     * @param {Uint8Array}	segment_id	Same segment ID as returned by CREATE_REQUEST
+     */,
+    destroy: function(address, segment_id){
+      var source_id, target_address, packet_data_header;
+      source_id = compute_source_id(address, segment_id);
+      if (!this$._outgoing_established_segments.has(source_id)) {
+        throw new ReferenceError('There is no such segment established');
+      }
+      target_address = this$._outgoing_established_segments.get(source_id).pop();
+      if (!this$._outgoing_established_segments.get(source_id).length) {
+        this$._outgoing_established_segments['delete'](source_id);
+      }
+      packet_data_header = generate_packet_data_header(COMMAND_DESTROY, 0);
+      this$._encrypt(address, segment_id, target_address, packet_data_header).then(function(packet_data_header_encrypted){
+        this$._encrypt(address, segment_id, target_address, new Uint8Array).then(function(command_data_encrypted){
           var packet_data, packet;
           packet_data = generate_packet_data(packet_data_header_encrypted, command_data_encrypted);
           packet = generate_packet(this$._packet_size, this$._version, segment_id, packet_data);
@@ -353,6 +394,8 @@
      */,
     _add_segments_forwarding_mapping: function(address1, segment_id1, address2, segment_id2){
       var source_id1, source_id2;
+      this._del_segments_forwarding_mapping(address1, segment_id1);
+      this._del_segments_forwarding_mapping(address2, segment_id2);
       source_id1 = compute_source_id(address1, segment_id1);
       source_id2 = compute_source_id(address2, segment_id2);
       this._segments_forwarding_mapping.set(source_id1, [address2, segment_id2]);
@@ -378,14 +421,15 @@
      * @param {Uint8Array}	packet_data
      */,
     _process_packet_data_encrypted: function(address, segment_id, packet_data){
-      var packet_data_header_encrypted, this$ = this;
+      var packet_data_header_encrypted, source_id, this$ = this;
       packet_data_header_encrypted = packet_data.slice(0, 3 + this._mac_length);
+      source_id = compute_source_id(address, segment_id);
       this._decrypt(address, segment_id, address, packet_data_header_encrypted).then(function(packet_data_header){
         var ref$, command, command_data_length, command_data_encrypted;
         ref$ = parse_packet_data_header(packet_data_header), command = ref$[0], command_data_length = ref$[1];
         command_data_encrypted = packet_data.slice(packet_data_header_encrypted.length, packet_data_header_encrypted.length + command_data_length);
         this$._decrypt(address, segment_id, address, command_data_encrypted).then(function(command_data){
-          var next_node_address, segment_creation_request_data, next_node_segment_id, next_node_source_id, e, source_id;
+          var next_node_address, segment_creation_request_data, next_node_segment_id, next_node_source_id, e;
           switch (command) {
           case COMMAND_EXTEND_REQUEST:
             try {
@@ -404,7 +448,6 @@
             }
             break;
           case COMMAND_EXTEND_RESPONSE:
-            source_id = compute_source_id(address, segment_id);
             if (this$._pending_extensions.has(source_id)) {
               this$.fire('extend_response', {
                 address: address,
@@ -414,6 +457,14 @@
             }
             break;
           case COMMAND_DESTROY:
+            if (this$._incoming_established_segments.has(source_id)) {
+              this$._incoming_established_segments['delete'](source_id);
+              this$._del_segments_forwarding_mapping(address, segment_id);
+              this$.fire('destroy', {
+                address: address,
+                segment_id: segment_id
+              });
+            }
             break;
           case COMMAND_DATA:
             this$.fire('data', {
@@ -424,8 +475,7 @@
           }
         });
       })['catch'](function(){
-        var source_id, ref$, target_address, target_segment_id, packet;
-        source_id = compute_source_id(address, segment_id);
+        var ref$, target_address, target_segment_id, packet;
         if (this$._segments_forwarding_mapping.has(source_id)) {
           ref$ = this$._segments_forwarding_mapping.get(source_id), target_address = ref$[0], target_segment_id = ref$[1];
           packet = generate_packet(this$._packet_size, this$._version, target_segment_id, packet_data);
