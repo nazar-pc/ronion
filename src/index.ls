@@ -233,7 +233,7 @@ Ronion:: =
 		(command_data_encrypted)		<~! @_encrypt(address, segment_id, target_address, command_data)
 		packet							= generate_packet(@_packet_size, @_version, segment_id, packet_data_header_encrypted, command_data_encrypted)
 		@fire('send', {address, packet})
-		@_pending_extensions.add(source_id, next_node_address)
+		@_pending_extensions.set(source_id, next_node_address)
 	/**
 	 * @param {Uint8Array}	address
 	 * @param {Uint8Array}	segment_id

@@ -260,7 +260,7 @@
             address: address,
             packet: packet
           });
-          this$._pending_extensions.add(source_id, next_node_address);
+          this$._pending_extensions.set(source_id, next_node_address);
         });
       });
     }
