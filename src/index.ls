@@ -65,19 +65,18 @@ function parse_packet_data_plaintext (packet_data)
  * @param {number}		packet_size
  * @param {number}		version
  * @param {Uint8Array}	segment_id
- * @param {number}		command
- * @param {Uint8Array}	command_data
+ * @param {Uint8Array}	packet_data_header
+ * @param {Uint8Array}	packet_data
  *
  * @return {Uint8Array}
  */
-function generate_packet_plaintext (packet_size, version, segment_id, command, command_data)
-	packet_data_header	= generate_packet_data_header(command, command_data.length)
-	packet	= new Uint8Array(packet_size)
+function generate_packet (packet_size, version, segment_id, packet_data_header, packet_data)
+	packet						= new Uint8Array(packet_size)
 		..set([version])
 		..set(segment_id, 1)
 		..set(packet_data_header, 3)
-		..set(command_data, 6)
-	bytes_written				= 6 + command_data.length
+		..set(packet_data, 3 + packet_data_header.length)
+	bytes_written				= 3 + packet_data_header.length + packet_data.length
 	random_bytes_padding_length	= packet_size - bytes_written
 	if random_bytes_padding_length
 		packet.set(randombytes(random_bytes_padding_length), bytes_written)
@@ -169,8 +168,9 @@ Ronion:: =
 	 * @throws {RangeError}
 	 */
 	create_request : (address, data) ->
-		segment_id	= @_generate_segment_id(address)
-		packet		= generate_packet_plaintext(@_packet_size, @_version, segment_id, COMMAND_CREATE_REQUEST, data)
+		segment_id			= @_generate_segment_id(address)
+		packet_data_header	= generate_packet_data_header(COMMAND_CREATE_REQUEST, data.length)
+		packet				= generate_packet(@_packet_size, @_version, segment_id, packet_data_header, data)
 		@fire('send', {address, packet})
 		segment_id
 	/**
@@ -193,7 +193,8 @@ Ronion:: =
 	 * @param {Uint8Array}	data
 	 */
 	create_response : (address, segment_id, data) !->
-		packet	= generate_packet_plaintext(@_packet_size, @_version, segment_id, COMMAND_CREATE_RESPONSE, data)
+		packet_data_header	= generate_packet_data_header(COMMAND_CREATE_RESPONSE, data.length)
+		packet				= generate_packet(@_packet_size, @_version, segment_id, packet_data_header, data)
 		@fire('send', {address, packet})
 	/**
 	 * Must be called in order to extend routing path by one more segment
@@ -209,8 +210,15 @@ Ronion:: =
 		source_id	= compute_source_id(address, segment_id)
 		if !@_established_segments.has(source_id)
 			throw new ReferenceError('There is no such segment established')
-		target_address	= @_established_segments.get(source_id).slice(-1)[0]
-		# TODO: the rest
+		target_address					= @_established_segments.get(source_id).slice(-1)[0]
+		packet_data_header				= generate_packet_data_header(COMMAND_EXTEND_REQUEST, data.length)
+		(packet_data_header_encrypted)	<~! @_encrypt(address, segment_id, target_address, packet_data_header)
+		command_data					= new Uint8Array(next_node_address.length + data.length)
+			..set(next_node_address)
+			..set(data, next_node_address.length)
+		(command_data_encrypted)		<~! @_encrypt(address, segment_id, target_address, command_data)
+		packet							= generate_packet(@_packet_size, @_version, segment_id, packet_data_header_encrypted, command_data_encrypted)
+		@fire('send', {address, packet})
 	/**
 	 * @param {Uint8Array}	address
 	 * @param {Uint8Array}	segment_id
