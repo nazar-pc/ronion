@@ -5,7 +5,7 @@
  * @license   MIT License, see license.txt
  */
 async-eventer	= require('async-eventer')
-randombytes		= require('randombytes')
+randombytes		= require('./randombytes')
 
 module.exports = Ronion
 

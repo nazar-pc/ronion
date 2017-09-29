@@ -8,7 +8,7 @@
 (function(){
   var asyncEventer, randombytes, COMMAND_CREATE_REQUEST, COMMAND_CREATE_RESPONSE, COMMAND_EXTEND_REQUEST, COMMAND_EXTEND_RESPONSE, COMMAND_DESTROY, COMMAND_DATA, MAX_PENDING_SEGMENTS, this$ = this;
   asyncEventer = require('async-eventer');
-  randombytes = require('randombytes');
+  randombytes = require('./randombytes');
   module.exports = Ronion;
   COMMAND_CREATE_REQUEST = 1;
   COMMAND_CREATE_RESPONSE = 2;
