@@ -324,8 +324,8 @@ Ronion:: =
 		if !@_incoming_established_segments.has(source_id) && @_segments_forwarding_mapping.has(source_id)
 			@_forward_packet_data(source_id, packet_data_encrypted)
 			return
-		@_decrypt(address, segment_id, packet_data_encrypted)
-			.then (packet_data) !~>
+		@_decrypt(address, segment_id, packet_data_encrypted).then(
+			(packet_data) !~>
 				[command, command_data]	= parse_packet_data(packet_data)
 				switch command
 					case COMMAND_EXTEND_REQUEST
@@ -355,7 +355,7 @@ Ronion:: =
 							@fire('destroy', {address, segment_id})
 					case COMMAND_DATA
 						@fire('data', {address, segment_id, command_data})
-			.catch !~>
+			!~>
 				if @_segments_forwarding_mapping.has(source_id)
 					@_forward_packet_data(source_id, packet_data_encrypted)
 				else if @_pending_segments.has(source_id)
@@ -370,6 +370,7 @@ Ronion:: =
 						@_unmark_segment_as_pending(next_node_address, next_node_segment_id)
 						@_add_segments_forwarding_mapping(address, segment_id, next_node_address, next_node_segment_id)
 						@_forward_packet_data(source_id, packet_data_encrypted)
+		)
 	/**
 	 * @param {string}		source_id
 	 * @param {Uint8Array}	packet_data_encrypted

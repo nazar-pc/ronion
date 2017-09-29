@@ -438,7 +438,7 @@
             command_data: command_data
           });
         }
-      })['catch'](function(){
+      }, function(){
         var pending_segment_data, ref$, next_node_address, next_node_segment_id;
         if (this$._segments_forwarding_mapping.has(source_id)) {
           this$._forward_packet_data(source_id, packet_data_encrypted);
