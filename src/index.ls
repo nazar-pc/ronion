@@ -271,7 +271,7 @@ Ronion:: =
 	 * @param {Uint8Array}	segment_id	Same segment ID as returned by CREATE_REQUEST
 	 */
 	destroy : (address, segment_id) !~>
-		source_id		= compute_source_id(address, segment_id)
+		source_id	= compute_source_id(address, segment_id)
 		if !@_outgoing_established_segments.has(source_id)
 			throw new ReferenceError('There is no such segment established')
 		target_address	= @_outgoing_established_segments.get(source_id).pop()
@@ -519,7 +519,7 @@ Ronion:: =
 		promise	= Promise.reject()
 		data	= {address, segment_id, target_addresses : null, ciphertext, plaintext : null}
 		target_addresses.forEach (target_address) !~>
-			promise				:= promise
+			promise	:= promise
 				.catch ~>
 					data.target_address	= target_address
 					@fire('decrypt', data)
