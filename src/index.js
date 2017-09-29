@@ -231,7 +231,7 @@
      */,
     create_request: function(address, command_data){
       var segment_id, packet;
-      if (command_data.length > this.get_max_plaintext_command_data_length()) {
+      if (command_data.length > this.get_max_command_data_length()) {
         throw new RangeError('Too much command data');
       }
       segment_id = this._generate_segment_id(address);
@@ -273,7 +273,7 @@
      */,
     create_response: function(address, segment_id, command_data){
       var packet;
-      if (command_data.length > this.get_max_plaintext_command_data_length()) {
+      if (command_data.length > this.get_max_command_data_length()) {
         throw new RangeError('Too much command data');
       }
       packet = generate_packet_plaintext(packet_size, version, segment_id, COMMAND_CREATE_RESPONSE, command_data);
@@ -288,7 +288,7 @@
      * @param {Uint8Array}	address				Node at which routing path has started
      * @param {Uint8Array}	segment_id			Same segment ID as returned by CREATE_REQUEST
      * @param {Uint8Array}	next_node_address	Node to which routing path will be extended from current last node
-     * @param {Uint8Array}	command_data
+     * @param {Uint8Array}	command_data		Add address length to max command data length, since `next_node_address` will be prepended to `command_data`
      *
      * @throws {RangeError}
      * @throws {ReferenceError}
@@ -299,7 +299,7 @@
       if (!this._outgoing_established_segments.has(source_id)) {
         throw new ReferenceError('There is no such segment established');
       }
-      if (command_data.length > this.get_max_encrypted_command_data_length()) {
+      if (command_data.length > this.get_max_command_data_length() - this._address_length) {
         throw new RangeError('Too much command data');
       }
       target_address = this._outgoing_established_segments.get(source_id).slice(-1)[0];
@@ -388,7 +388,7 @@
       if (!this._outgoing_established_segments.has(source_id)) {
         throw new ReferenceError('There is no such segment established');
       }
-      if (command_data.length > this.get_max_encrypted_command_data_length()) {
+      if (command_data.length > this.get_max_command_data_length()) {
         throw new RangeError('Too much command data');
       }
       this._generate_packet_encrypted(address, segment_id, target_address, COMMAND_DATA, command_data).then(function(packet){
@@ -399,19 +399,11 @@
       });
     }
     /**
-     * Convenient method for knowing how much command data can be sent in plaintext packet
+     * Convenient method for knowing how much command data can be sent in one packet
      *
      * @return {number}
      */,
-    get_max_plaintext_command_data_length: function(){
-      return this._packet_size - 1 - 2 - 1 - 2;
-    }
-    /**
-     * Convenient method for knowing how much command data can be sent in encrypted packet
-     *
-     * @return {number}
-     */,
-    get_max_encrypted_command_data_length: function(){
+    get_max_command_data_length: function(){
       return this._packet_size - 1 - 2 - 1 - 2 - this._mac_length - this._mac_length;
     }
     /**

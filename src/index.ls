@@ -223,7 +223,7 @@ Ronion:: =
 	 * @throws {RangeError}
 	 */
 	create_request : (address, command_data) ->
-		if command_data.length > @get_max_plaintext_command_data_length()
+		if command_data.length > @get_max_command_data_length()
 			throw new RangeError('Too much command data')
 		segment_id	= @_generate_segment_id(address)
 		packet		= generate_packet_plaintext(packet_size, version, segment_id, COMMAND_CREATE_REQUEST, command_data)
@@ -254,7 +254,7 @@ Ronion:: =
 	 * @throws {RangeError}
 	 */
 	create_response : (address, segment_id, command_data) !->
-		if command_data.length > @get_max_plaintext_command_data_length()
+		if command_data.length > @get_max_command_data_length()
 			throw new RangeError('Too much command data')
 		packet	= generate_packet_plaintext(packet_size, version, segment_id, COMMAND_CREATE_RESPONSE, command_data)
 		@fire('send', {address, packet})
@@ -264,7 +264,7 @@ Ronion:: =
 	 * @param {Uint8Array}	address				Node at which routing path has started
 	 * @param {Uint8Array}	segment_id			Same segment ID as returned by CREATE_REQUEST
 	 * @param {Uint8Array}	next_node_address	Node to which routing path will be extended from current last node
-	 * @param {Uint8Array}	command_data
+	 * @param {Uint8Array}	command_data		Add address length to max command data length, since `next_node_address` will be prepended to `command_data`
 	 *
 	 * @throws {RangeError}
 	 * @throws {ReferenceError}
@@ -273,7 +273,8 @@ Ronion:: =
 		source_id	= compute_source_id(address, segment_id)
 		if !@_outgoing_established_segments.has(source_id)
 			throw new ReferenceError('There is no such segment established')
-		if command_data.length > @get_max_encrypted_command_data_length()
+		# Harder command data length limit, since we need to fit address there as well
+		if command_data.length > (@get_max_command_data_length() - @_address_length)
 			throw new RangeError('Too much command data')
 		target_address	= @_outgoing_established_segments.get(source_id).slice(-1)[0]
 		command_data	= new Uint8Array(next_node_address.length + command_data.length)
@@ -338,25 +339,17 @@ Ronion:: =
 		source_id	= compute_source_id(address, segment_id)
 		if !@_outgoing_established_segments.has(source_id)
 			throw new ReferenceError('There is no such segment established')
-		if command_data.length > @get_max_encrypted_command_data_length()
+		if command_data.length > @get_max_command_data_length()
 			throw new RangeError('Too much command data')
 		@_generate_packet_encrypted(address, segment_id, target_address, COMMAND_DATA, command_data).then (packet) !~>
 			@fire('send', {address, packet})
 	/**
-	 * Convenient method for knowing how much command data can be sent in plaintext packet
+	 * Convenient method for knowing how much command data can be sent in one packet
 	 *
 	 * @return {number}
 	 */
-	get_max_plaintext_command_data_length : ->
-		# Total packet size length - version - segment ID - command - command_data_length
-		@_packet_size - 1 - 2 - 1 - 2
-	/**
-	 * Convenient method for knowing how much command data can be sent in encrypted packet
-	 *
-	 * @return {number}
-	 */
-	get_max_encrypted_command_data_length : ->
-		# Total packet size length - version - segment ID - command - command_data_length - MAC - MAC (of command data)
+	get_max_command_data_length : ->
+		# We use the same length limit both for encrypted and plaintext packets command data, since plaintext can be wrapped into encrypted one
 		@_packet_size - 1 - 2 - 1 - 2 - @_mac_length - @_mac_length
 	/**
 	 * @param {Uint8Array}	address
