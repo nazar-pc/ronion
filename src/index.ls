@@ -311,6 +311,26 @@ Ronion:: =
 		packet							= generate_packet(@_packet_size, @_version, segment_id, packet_data)
 		@fire('send', {address, packet})
 	/**
+	 * Must be called in order to send data to the node in routing path that starts with specified address and segment ID, sends DATA
+	 *
+	 * @param {Uint8Array}	address				Node at which routing path has started
+	 * @param {Uint8Array}	segment_id			Same segment ID as returned by CREATE_REQUEST
+	 * @param {Uint8Array}	target_address		Node to which data should be sent, in case of sending data back to the initiator is the same as `address`
+	 * @param {Uint8Array}	command_data
+	 *
+	 * @throws {ReferenceError}
+	 */
+	data : (address, segment_id, target_address, command_data) !->
+		source_id	= compute_source_id(address, segment_id)
+		if !@_outgoing_established_segments.has(source_id)
+			throw new ReferenceError('There is no such segment established')
+		packet_data_header				= generate_packet_data_header(COMMAND_DATA, command_data.length)
+		(packet_data_header_encrypted)	<~! @_encrypt(address, segment_id, target_address, packet_data_header).then
+		(command_data_encrypted)		<~! @_encrypt(address, segment_id, target_address, command_data).then
+		packet_data						= generate_packet_data(packet_data_header_encrypted, command_data_encrypted)
+		packet							= generate_packet(@_packet_size, @_version, segment_id, packet_data)
+		@fire('send', {address, packet})
+	/**
 	 * @param {Uint8Array}	address
 	 * @param {Uint8Array}	segment_id
 	 * @param {Uint8Array}	packet_data
