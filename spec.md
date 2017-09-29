@@ -1,6 +1,6 @@
 # Ronion anonymous routing protocol framework specification
 
-Specification version: 0.0.13
+Specification version: 0.0.14
 
 Author: Nazar Mokrynskyi
 
@@ -206,3 +206,10 @@ Here is the list of things an application developer SHOULD consider in order to 
 * padding MUST always use random bytes and MUST NOT re-use the same random bytes again
 * initiator MUST use separate temporary keys for each node and each `[segment_id]` it communicates with and MUST never re-use the same keys for different nodes or different `[segment_id]` again
 * application on any node MIGHT want to send fake packets, apply custom delays between sending packets and forward packets from independent `[segment_id]` in different order than they have come to the node in order to confuse an observer
+
+### Acknowledgements
+This protocol framework is heavily inspired by [Tor](https://www.torproject.org/).
+
+The address was intentionally not defined explicitly so that it can be anything, but the primary idea was to use this with DHT and use public key as both node ID in DHT and address in this protocol framework.
+
+The crypto layer that was kept in mind throughout designing was `XK` handshake pattern from [The Noise Protocol Framework](https://noiseprotocol.org/).
