@@ -66,21 +66,6 @@
    * @param {number}		packet_size
    * @param {number}		version
    * @param {Uint8Array}	segment_id
-   * @param {number}		command
-   * @param {Uint8Array}	command_data
-   *
-   * @return {Uint8Array}
-   */
-  function generate_packet_plaintext(packet_size, version, segment_id, command, command_data){
-    var packet_data_header, packet_data;
-    packet_data_header = generate_packet_data_header(command, command_data.length);
-    packet_data = generate_packet_data(packet_data_header, command_data);
-    return generate_packet(this._packet_size, this._version, segment_id, packet_data);
-  }
-  /**
-   * @param {number}		packet_size
-   * @param {number}		version
-   * @param {Uint8Array}	segment_id
    * @param {Uint8Array}	packet_data
    *
    * @return {Uint8Array}
@@ -235,7 +220,7 @@
         throw new RangeError('Too much command data');
       }
       segment_id = this._generate_segment_id(address);
-      packet = generate_packet_plaintext(packet_size, version, segment_id, COMMAND_CREATE_REQUEST, command_data);
+      packet = this._generate_packet_plaintext(segment_id, COMMAND_CREATE_REQUEST, command_data);
       this.fire('send', {
         address: address,
         packet: packet
@@ -276,7 +261,7 @@
       if (command_data.length > this.get_max_command_data_length()) {
         throw new RangeError('Too much command data');
       }
-      packet = generate_packet_plaintext(packet_size, version, segment_id, COMMAND_CREATE_RESPONSE, command_data);
+      packet = this._generate_packet_plaintext(segment_id, COMMAND_CREATE_RESPONSE, command_data);
       this.fire('send', {
         address: address,
         packet: packet
@@ -313,6 +298,21 @@
         });
         this$._pending_extensions.set(source_id, next_node_address);
       });
+    }
+    /**
+     * @param {number}		packet_size
+     * @param {number}		version
+     * @param {Uint8Array}	segment_id
+     * @param {number}		command
+     * @param {Uint8Array}	command_data
+     *
+     * @return {Uint8Array}
+     */,
+    _generate_packet_plaintext: function(segment_id, command, command_data){
+      var packet_data_header, packet_data;
+      packet_data_header = generate_packet_data_header(command, command_data.length);
+      packet_data = generate_packet_data(packet_data_header, command_data);
+      return generate_packet(this._packet_size, this._version, segment_id, packet_data);
     }
     /**
      * @param {Uint8Array}	address

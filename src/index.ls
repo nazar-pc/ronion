@@ -68,19 +68,6 @@ function parse_packet_data_plaintext (packet_data)
  * @param {number}		packet_size
  * @param {number}		version
  * @param {Uint8Array}	segment_id
- * @param {number}		command
- * @param {Uint8Array}	command_data
- *
- * @return {Uint8Array}
- */
-function generate_packet_plaintext (packet_size, version, segment_id, command, command_data)
-	packet_data_header	= generate_packet_data_header(command, command_data.length)
-	packet_data			= generate_packet_data(packet_data_header, command_data)
-	generate_packet(@_packet_size, @_version, segment_id, packet_data)
-/**
- * @param {number}		packet_size
- * @param {number}		version
- * @param {Uint8Array}	segment_id
  * @param {Uint8Array}	packet_data
  *
  * @return {Uint8Array}
@@ -226,7 +213,7 @@ Ronion:: =
 		if command_data.length > @get_max_command_data_length()
 			throw new RangeError('Too much command data')
 		segment_id	= @_generate_segment_id(address)
-		packet		= generate_packet_plaintext(packet_size, version, segment_id, COMMAND_CREATE_REQUEST, command_data)
+		packet		= @_generate_packet_plaintext(segment_id, COMMAND_CREATE_REQUEST, command_data)
 		@fire('send', {address, packet})
 		@_mark_segment_as_pending(address, segment_id)
 		segment_id
@@ -256,7 +243,7 @@ Ronion:: =
 	create_response : (address, segment_id, command_data) !->
 		if command_data.length > @get_max_command_data_length()
 			throw new RangeError('Too much command data')
-		packet	= generate_packet_plaintext(packet_size, version, segment_id, COMMAND_CREATE_RESPONSE, command_data)
+		packet	= @_generate_packet_plaintext(segment_id, COMMAND_CREATE_RESPONSE, command_data)
 		@fire('send', {address, packet})
 	/**
 	 * Must be called in order to extend routing path that starts with specified address and segment ID by one more segment, sends EXTEND_REQUEST
@@ -283,6 +270,19 @@ Ronion:: =
 		@_generate_packet_encrypted(address, segment_id, target_address, COMMAND_EXTEND_REQUEST, command_data).then (packet) !~>
 			@fire('send', {address, packet})
 			@_pending_extensions.set(source_id, next_node_address)
+	/**
+	 * @param {number}		packet_size
+	 * @param {number}		version
+	 * @param {Uint8Array}	segment_id
+	 * @param {number}		command
+	 * @param {Uint8Array}	command_data
+	 *
+	 * @return {Uint8Array}
+	 */
+	_generate_packet_plaintext : (segment_id, command, command_data) ->
+		packet_data_header	= generate_packet_data_header(command, command_data.length)
+		packet_data			= generate_packet_data(packet_data_header, command_data)
+		generate_packet(@_packet_size, @_version, segment_id, packet_data)
 	/**
 	 * @param {Uint8Array}	address
 	 * @param {Uint8Array}	segment_id
