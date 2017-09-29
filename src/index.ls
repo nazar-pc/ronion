@@ -218,20 +218,6 @@ Ronion:: =
 		@_mark_segment_as_pending(address, segment_id)
 		segment_id
 	/**
-	 * @param {Uint8Array} address
-	 *
-	 * @return {Uint8Array}
-	 *
-	 * @throws {RangeError}
-	 */
-	_generate_segment_id : (address) ->
-		for i from 0 til 2**16
-			segment_id	= number_to_uint_array(i)
-			source_id	= compute_source_id(address, segment_id)
-			if !@_outgoing_established_segments.has(source_id) && !@_pending_segments.has(source_id) && !@_incoming_established_segments.has(source_id)
-				return segment_id
-		throw new RangeError('Out of possible segment IDs')
-	/**
 	 * Must be called in order to respond to CREATE_RESPONSE
 	 *
 	 * @param {Uint8Array}	address			Node from which CREATE_REQUEST come from
@@ -270,36 +256,6 @@ Ronion:: =
 		@_generate_packet_encrypted(address, segment_id, target_address, COMMAND_EXTEND_REQUEST, command_data).then (packet) !~>
 			@fire('send', {address, packet})
 			@_pending_extensions.set(source_id, next_node_address)
-	/**
-	 * @param {number}		packet_size
-	 * @param {number}		version
-	 * @param {Uint8Array}	segment_id
-	 * @param {number}		command
-	 * @param {Uint8Array}	command_data
-	 *
-	 * @return {Uint8Array}
-	 */
-	_generate_packet_plaintext : (segment_id, command, command_data) ->
-		packet_data_header	= generate_packet_data_header(command, command_data.length)
-		packet_data			= generate_packet_data(packet_data_header, command_data)
-		generate_packet(@_packet_size, @_version, segment_id, packet_data)
-	/**
-	 * @param {Uint8Array}	address
-	 * @param {Uint8Array}	segment_id
-	 * @param {Uint8Array}	target_address
-	 * @param {number}		command
-	 * @param {Uint8Array}	command_data
-	 *
-	 * @return {Promise} Resolves with Uint8Array packet
-	 */
-	_generate_packet_encrypted : (address, segment_id, target_address, command, command_data) ->
-		packet_data_header	= generate_packet_data_header(command, command_data.length)
-		@_encrypt(address, segment_id, address, packet_data_header)
-			.then (packet_data_header_encrypted) ~>
-				@_encrypt(address, segment_id, address, command_data)
-			.then (command_data_encrypted) ~>
-				packet_data	= generate_packet_data(packet_data_header_encrypted, command_data_encrypted)
-				generate_packet(@_packet_size, @_version, segment_id, packet_data)
 	/**
 	 * @param {Uint8Array}	address
 	 * @param {Uint8Array}	segment_id
@@ -379,32 +335,6 @@ Ronion:: =
 					@fire('create_response', {address, segment_id, command_data})
 		@fire('send', {address, packet})
 	/**
-	 * @param {Uint8Array}	address1
-	 * @param {Uint8Array}	segment_id1
-	 * @param {Uint8Array}	address2
-	 * @param {Uint8Array}	segment_id2
-	 */
-	_add_segments_forwarding_mapping : (address1, segment_id1, address2, segment_id2) !->
-		# Drop any old mappings
-		@_del_segments_forwarding_mapping(address1, segment_id1)
-		@_del_segments_forwarding_mapping(address2, segment_id2)
-
-		source_id1	= compute_source_id(address1, segment_id1)
-		source_id2	= compute_source_id(address2, segment_id2)
-		@_segments_forwarding_mapping.set(source_id1, [address2, segment_id2])
-		@_segments_forwarding_mapping.set(source_id2, [address1, segment_id1])
-	/**
-	 * @param {Uint8Array}	address
-	 * @param {Uint8Array}	segment_id
-	 */
-	_del_segments_forwarding_mapping : (address, segment_id) !->
-		source_id1	= compute_source_id(address, segment_id)
-		if @_segments_forwarding_mapping.has(source_id1)
-			[address2, segment_id2]	= @_segments_forwarding_mapping.get(source_id1)
-			source_id2				= compute_source_id(address2, segment_id2)
-			@_segments_forwarding_mapping.delete(source_id1)
-			@_segments_forwarding_mapping.delete(source_id2)
-	/**
 	 * @param {Uint8Array}	address
 	 * @param {Uint8Array}	segment_id
 	 * @param {Uint8Array}	packet_data
@@ -448,6 +378,76 @@ Ronion:: =
 					[target_address, target_segment_id]	= @_segments_forwarding_mapping.get(source_id)
 					packet								= generate_packet(@_packet_size, @_version, target_segment_id, packet_data)
 					@fire('send', {address : target_address, packet})
+	/**
+	 * @param {Uint8Array} address
+	 *
+	 * @return {Uint8Array}
+	 *
+	 * @throws {RangeError}
+	 */
+	_generate_segment_id : (address) ->
+		for i from 0 til 2**16
+			segment_id	= number_to_uint_array(i)
+			source_id	= compute_source_id(address, segment_id)
+			if !@_outgoing_established_segments.has(source_id) && !@_pending_segments.has(source_id) && !@_incoming_established_segments.has(source_id)
+				return segment_id
+		throw new RangeError('Out of possible segment IDs')
+	/**
+	 * @param {number}		packet_size
+	 * @param {number}		version
+	 * @param {Uint8Array}	segment_id
+	 * @param {number}		command
+	 * @param {Uint8Array}	command_data
+	 *
+	 * @return {Uint8Array}
+	 */
+	_generate_packet_plaintext : (segment_id, command, command_data) ->
+		packet_data_header	= generate_packet_data_header(command, command_data.length)
+		packet_data			= generate_packet_data(packet_data_header, command_data)
+		generate_packet(@_packet_size, @_version, segment_id, packet_data)
+	/**
+	 * @param {Uint8Array}	address
+	 * @param {Uint8Array}	segment_id
+	 * @param {Uint8Array}	target_address
+	 * @param {number}		command
+	 * @param {Uint8Array}	command_data
+	 *
+	 * @return {Promise} Resolves with Uint8Array packet
+	 */
+	_generate_packet_encrypted : (address, segment_id, target_address, command, command_data) ->
+		packet_data_header	= generate_packet_data_header(command, command_data.length)
+		@_encrypt(address, segment_id, address, packet_data_header)
+			.then (packet_data_header_encrypted) ~>
+				@_encrypt(address, segment_id, address, command_data)
+			.then (command_data_encrypted) ~>
+				packet_data	= generate_packet_data(packet_data_header_encrypted, command_data_encrypted)
+				generate_packet(@_packet_size, @_version, segment_id, packet_data)
+	/**
+	 * @param {Uint8Array}	address1
+	 * @param {Uint8Array}	segment_id1
+	 * @param {Uint8Array}	address2
+	 * @param {Uint8Array}	segment_id2
+	 */
+	_add_segments_forwarding_mapping : (address1, segment_id1, address2, segment_id2) !->
+		# Drop any old mappings
+		@_del_segments_forwarding_mapping(address1, segment_id1)
+		@_del_segments_forwarding_mapping(address2, segment_id2)
+
+		source_id1	= compute_source_id(address1, segment_id1)
+		source_id2	= compute_source_id(address2, segment_id2)
+		@_segments_forwarding_mapping.set(source_id1, [address2, segment_id2])
+		@_segments_forwarding_mapping.set(source_id2, [address1, segment_id1])
+	/**
+	 * @param {Uint8Array}	address
+	 * @param {Uint8Array}	segment_id
+	 */
+	_del_segments_forwarding_mapping : (address, segment_id) !->
+		source_id1	= compute_source_id(address, segment_id)
+		if @_segments_forwarding_mapping.has(source_id1)
+			[address2, segment_id2]	= @_segments_forwarding_mapping.get(source_id1)
+			source_id2				= compute_source_id(address2, segment_id2)
+			@_segments_forwarding_mapping.delete(source_id1)
+			@_segments_forwarding_mapping.delete(source_id2)
 	/**
 	 * @param {Uint8Array}	address
 	 * @param {Uint8Array}	segment_id
