@@ -395,7 +395,6 @@ Ronion:: =
 						if @_pending_extensions.has(source_id)
 							@fire('extend_response', {address, segment_id, command_data})
 					case COMMAND_DESTROY
-						# TODO: spec MUST allow sending DESTROY commands back from any node
 						if @_incoming_established_segments.has(source_id)
 							@_incoming_established_segments.delete(source_id)
 							@_del_segments_forwarding_mapping(address, segment_id)

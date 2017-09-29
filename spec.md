@@ -1,6 +1,6 @@
 # Ronion anonymous routing protocol framework specification
 
-Specification version: 0.0.12
+Specification version: 0.0.13
 
 Author: Nazar Mokrynskyi
 
@@ -161,7 +161,7 @@ Response data handling:
 * if `[segment_creation_response_data_length]` has value `0`, it means that routing path creation has failed (can happen if node can't extend the routing path, for instance, when node with specified address doesn't exist)
 
 #### DESTROY command
-Is used in order to destroy certain segment of the routing path. This command MUST always be sent to the last node in the routing path.
+Is used in order to destroy certain segment of the routing path. This command MUST only be sent by initiator and only to the last node in the routing path.
 
 Request data:
 ```
