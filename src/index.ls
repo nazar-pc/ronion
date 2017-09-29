@@ -350,6 +350,7 @@ Ronion:: =
 	 */
 	get_max_command_data_length : ->
 		# We use the same length limit both for encrypted and plaintext packets command data, since plaintext can be wrapped into encrypted one
+		# Total packet size length - version - segment ID - command - command_data_length - MAC (of packet data header) - MAC (of command data)
 		@_packet_size - 1 - 2 - 1 - 2 - @_mac_length - @_mac_length
 	/**
 	 * @param {Uint8Array}	address
