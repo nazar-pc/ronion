@@ -371,11 +371,11 @@ Ronion:: =
 		# Packet data header size + MAC
 		packet_data_header_encrypted	= packet_data.slice(0, 3 + @_mac_length)
 		source_id						= compute_source_id(address, segment_id)
-		@_decrypt(address, segment_id, address, packet_data_header_encrypted)
+		@_decrypt(address, segment_id, packet_data_header_encrypted)
 			.then (packet_data_header) !~>
 				[command, command_data_length]	= parse_packet_data_header(packet_data_header)
 				command_data_encrypted			= packet_data.slice(packet_data_header_encrypted.length, packet_data_header_encrypted.length + command_data_length)
-				(command_data)					<~! @_decrypt(address, segment_id, address, command_data_encrypted).then
+				(command_data)					<~! @_decrypt(address, segment_id, command_data_encrypted).then
 				switch command
 					case COMMAND_EXTEND_REQUEST
 						try
@@ -460,21 +460,33 @@ Ronion:: =
 		promise.catch(->) # Just to avoid unhandled promise rejection
 		promise
 	/**
-	 * @param {Uint8Array}	address			Node at which routing path has started
-	 * @param {Uint8Array}	segment_id		Same segment ID as returned by CREATE_REQUEST
-	 * @param {Uint8Array}	target_address	Address from which to decrypt (can be the same as address argument or any other node in routing path)
+	 * @param {Uint8Array}	address		Node at which routing path has started
+	 * @param {Uint8Array}	segment_id	Same segment ID as returned by CREATE_REQUEST
 	 * @param {Uint8Array}	ciphertext
 	 *
 	 * @return {Promise} Will resolve with Uint8Array plaintext if decrypted successfully
 	 */
-	_decrypt : (address, segment_id, target_address, ciphertext) ->
-		# TODO: encrypted contents for initiator can be sent from any node in routing path, so it is necessary to try to decrypt message as it comes from any node
-		data	= {address, segment_id, target_address, ciphertext, plaintext : null}
-		promise	= @fire('decrypt', data).then ~>
-			plaintext	= data.plaintext
-			if !(plaintext instanceof Uint8Array) || plaintext.length != (ciphertext.length - @_mac_length)
-				throw new Error('Decryption failed')
-			plaintext
+	_decrypt : (address, segment_id, ciphertext) ->
+		source_id	= compute_source_id(address, segment_id)
+		if @_outgoing_established_segments.has(source_id)
+			# If ciphertext comes from outgoing segment, it can be from any node in the routing path,
+			# Let't try to decrypt as it comes from each node in routing path starting from the last one
+			target_addresses	= @_outgoing_established_segments.get(source_id).slice().reverse()
+		else
+			# Otherwise it can only come from previous node, so let's try it
+			target_addresses	= [address]
+		promise	= Promise.reject()
+		data	= {address, segment_id, target_addresses : null, ciphertext, plaintext : null}
+		target_addresses.forEach (target_address) !~>
+			promise				:= promise
+				.catch ~>
+					data.target_address	= target_address
+					@fire('decrypt', data)
+				.then ->
+					plaintext	= data.plaintext
+					if !(plaintext instanceof Uint8Array) || plaintext.length != (ciphertext.length - @_mac_length)
+						throw new Error('Decryption failed')
+					plaintext
 		promise.catch(->) # Just to avoid unhandled promise rejection
 		promise
 

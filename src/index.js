@@ -436,11 +436,11 @@
       var packet_data_header_encrypted, source_id, this$ = this;
       packet_data_header_encrypted = packet_data.slice(0, 3 + this._mac_length);
       source_id = compute_source_id(address, segment_id);
-      this._decrypt(address, segment_id, address, packet_data_header_encrypted).then(function(packet_data_header){
+      this._decrypt(address, segment_id, packet_data_header_encrypted).then(function(packet_data_header){
         var ref$, command, command_data_length, command_data_encrypted;
         ref$ = parse_packet_data_header(packet_data_header), command = ref$[0], command_data_length = ref$[1];
         command_data_encrypted = packet_data.slice(packet_data_header_encrypted.length, packet_data_header_encrypted.length + command_data_length);
-        this$._decrypt(address, segment_id, address, command_data_encrypted).then(function(command_data){
+        this$._decrypt(address, segment_id, command_data_encrypted).then(function(command_data){
           var next_node_address, segment_creation_request_data, next_node_segment_id, original_source, e;
           switch (command) {
           case COMMAND_EXTEND_REQUEST:
@@ -575,29 +575,40 @@
       return promise;
     }
     /**
-     * @param {Uint8Array}	address			Node at which routing path has started
-     * @param {Uint8Array}	segment_id		Same segment ID as returned by CREATE_REQUEST
-     * @param {Uint8Array}	target_address	Address from which to decrypt (can be the same as address argument or any other node in routing path)
+     * @param {Uint8Array}	address		Node at which routing path has started
+     * @param {Uint8Array}	segment_id	Same segment ID as returned by CREATE_REQUEST
      * @param {Uint8Array}	ciphertext
      *
      * @return {Promise} Will resolve with Uint8Array plaintext if decrypted successfully
      */,
-    _decrypt: function(address, segment_id, target_address, ciphertext){
-      var data, promise, this$ = this;
+    _decrypt: function(address, segment_id, ciphertext){
+      var source_id, target_addresses, promise, data, this$ = this;
+      source_id = compute_source_id(address, segment_id);
+      if (this._outgoing_established_segments.has(source_id)) {
+        target_addresses = this._outgoing_established_segments.get(source_id).slice().reverse();
+      } else {
+        target_addresses = [address];
+      }
+      promise = Promise.reject();
       data = {
         address: address,
         segment_id: segment_id,
-        target_address: target_address,
+        target_addresses: null,
         ciphertext: ciphertext,
         plaintext: null
       };
-      promise = this.fire('decrypt', data).then(function(){
-        var plaintext;
-        plaintext = data.plaintext;
-        if (!(plaintext instanceof Uint8Array) || plaintext.length !== ciphertext.length - this$._mac_length) {
-          throw new Error('Decryption failed');
-        }
-        return plaintext;
+      target_addresses.forEach(function(target_address){
+        promise = promise['catch'](function(){
+          data.target_address = target_address;
+          return this$.fire('decrypt', data);
+        }).then(function(){
+          var plaintext;
+          plaintext = data.plaintext;
+          if (!(plaintext instanceof Uint8Array) || plaintext.length !== ciphertext.length - this._mac_length) {
+            throw new Error('Decryption failed');
+          }
+          return plaintext;
+        });
       });
       promise['catch'](function(){});
       return promise;
