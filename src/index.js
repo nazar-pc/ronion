@@ -231,6 +231,9 @@
      */,
     create_request: function(address, command_data){
       var segment_id, packet;
+      if (command_data.length > this.get_max_plaintext_command_data_length()) {
+        throw new RangeError('Too much command data');
+      }
       segment_id = this._generate_segment_id(address);
       packet = generate_packet_plaintext(packet_size, version, segment_id, COMMAND_CREATE_REQUEST, command_data);
       this.fire('send', {
@@ -265,9 +268,14 @@
      * @param {Uint8Array}	address			Node from which CREATE_REQUEST come from
      * @param {Uint8Array}	segment_id		Same segment ID as in CREATE_REQUEST
      * @param {Uint8Array}	command_data
+     *
+     * @throws {RangeError}
      */,
     create_response: function(address, segment_id, command_data){
       var packet;
+      if (command_data.length > this.get_max_plaintext_command_data_length()) {
+        throw new RangeError('Too much command data');
+      }
       packet = generate_packet_plaintext(packet_size, version, segment_id, COMMAND_CREATE_RESPONSE, command_data);
       this.fire('send', {
         address: address,
@@ -282,6 +290,7 @@
      * @param {Uint8Array}	next_node_address	Node to which routing path will be extended from current last node
      * @param {Uint8Array}	command_data
      *
+     * @throws {RangeError}
      * @throws {ReferenceError}
      */,
     extend_request: function(address, segment_id, next_node_address, command_data){
@@ -289,6 +298,9 @@
       source_id = compute_source_id(address, segment_id);
       if (!this._outgoing_established_segments.has(source_id)) {
         throw new ReferenceError('There is no such segment established');
+      }
+      if (command_data.length > this.get_max_encrypted_command_data_length()) {
+        throw new RangeError('Too much command data');
       }
       target_address = this._outgoing_established_segments.get(source_id).slice(-1)[0];
       packet_data_header = generate_packet_data_header(COMMAND_EXTEND_REQUEST, command_data.length);
@@ -366,6 +378,7 @@
      * @param {Uint8Array}	target_address		Node to which data should be sent, in case of sending data back to the initiator is the same as `address`
      * @param {Uint8Array}	command_data
      *
+     * @throws {RangeError}
      * @throws {ReferenceError}
      */,
     data: function(address, segment_id, target_address, command_data){
@@ -373,6 +386,9 @@
       source_id = compute_source_id(address, segment_id);
       if (!this._outgoing_established_segments.has(source_id)) {
         throw new ReferenceError('There is no such segment established');
+      }
+      if (command_data.length > this.get_max_encrypted_command_data_length()) {
+        throw new RangeError('Too much command data');
       }
       packet_data_header = generate_packet_data_header(COMMAND_DATA, command_data.length);
       this._encrypt(address, segment_id, target_address, packet_data_header).then(function(packet_data_header_encrypted){
@@ -386,6 +402,22 @@
           });
         });
       });
+    }
+    /**
+     * Convenient method for knowing how much command data can be sent in plaintext packet
+     *
+     * @return {number}
+     */,
+    get_max_plaintext_command_data_length: function(){
+      return this._packet_size - 1 - 2 - 1 - 2;
+    }
+    /**
+     * Convenient method for knowing how much command data can be sent in encrypted packet
+     *
+     * @return {number}
+     */,
+    get_max_encrypted_command_data_length: function(){
+      return this._packet_size - 1 - 2 - 1 - 2 - this._mac_length - this._mac_length;
     }
     /**
      * @param {Uint8Array}	address

@@ -158,7 +158,6 @@ function compute_source_id (address, segment_id)
 	# Map of segments where data can come from to segment where data should be forwarded to if can't be decrypted, each mapping results in 2 elements, one for each direction
 	@_segments_forwarding_mapping		= new Map
 
-# TODO: Add checks for allowed command_data size, since we can do that automatically
 Ronion:: =
 	/**
 	 * Must be called when new packet appear
@@ -224,6 +223,8 @@ Ronion:: =
 	 * @throws {RangeError}
 	 */
 	create_request : (address, command_data) ->
+		if command_data.length > @get_max_plaintext_command_data_length()
+			throw new RangeError('Too much command data')
 		segment_id	= @_generate_segment_id(address)
 		packet		= generate_packet_plaintext(packet_size, version, segment_id, COMMAND_CREATE_REQUEST, command_data)
 		@fire('send', {address, packet})
@@ -249,8 +250,12 @@ Ronion:: =
 	 * @param {Uint8Array}	address			Node from which CREATE_REQUEST come from
 	 * @param {Uint8Array}	segment_id		Same segment ID as in CREATE_REQUEST
 	 * @param {Uint8Array}	command_data
+	 *
+	 * @throws {RangeError}
 	 */
 	create_response : (address, segment_id, command_data) !->
+		if command_data.length > @get_max_plaintext_command_data_length()
+			throw new RangeError('Too much command data')
 		packet	= generate_packet_plaintext(packet_size, version, segment_id, COMMAND_CREATE_RESPONSE, command_data)
 		@fire('send', {address, packet})
 	/**
@@ -261,12 +266,15 @@ Ronion:: =
 	 * @param {Uint8Array}	next_node_address	Node to which routing path will be extended from current last node
 	 * @param {Uint8Array}	command_data
 	 *
+	 * @throws {RangeError}
 	 * @throws {ReferenceError}
 	 */
 	extend_request : (address, segment_id, next_node_address, command_data) !->
 		source_id	= compute_source_id(address, segment_id)
 		if !@_outgoing_established_segments.has(source_id)
 			throw new ReferenceError('There is no such segment established')
+		if command_data.length > @get_max_encrypted_command_data_length()
+			throw new RangeError('Too much command data')
 		target_address					= @_outgoing_established_segments.get(source_id).slice(-1)[0]
 		packet_data_header				= generate_packet_data_header(COMMAND_EXTEND_REQUEST, command_data.length)
 		(packet_data_header_encrypted)	<~! @_encrypt(address, segment_id, target_address, packet_data_header).then
@@ -318,18 +326,37 @@ Ronion:: =
 	 * @param {Uint8Array}	target_address		Node to which data should be sent, in case of sending data back to the initiator is the same as `address`
 	 * @param {Uint8Array}	command_data
 	 *
+	 * @throws {RangeError}
 	 * @throws {ReferenceError}
 	 */
 	data : (address, segment_id, target_address, command_data) !->
 		source_id	= compute_source_id(address, segment_id)
 		if !@_outgoing_established_segments.has(source_id)
 			throw new ReferenceError('There is no such segment established')
+		if command_data.length > @get_max_encrypted_command_data_length()
+			throw new RangeError('Too much command data')
 		packet_data_header				= generate_packet_data_header(COMMAND_DATA, command_data.length)
 		(packet_data_header_encrypted)	<~! @_encrypt(address, segment_id, target_address, packet_data_header).then
 		(command_data_encrypted)		<~! @_encrypt(address, segment_id, target_address, command_data).then
 		packet_data						= generate_packet_data(packet_data_header_encrypted, command_data_encrypted)
 		packet							= generate_packet(@_packet_size, @_version, segment_id, packet_data)
 		@fire('send', {address, packet})
+	/**
+	 * Convenient method for knowing how much command data can be sent in plaintext packet
+	 *
+	 * @return {number}
+	 */
+	get_max_plaintext_command_data_length : ->
+		# Total packet size length - version - segment ID - command - command_data_length
+		@_packet_size - 1 - 2 - 1 - 2
+	/**
+	 * Convenient method for knowing how much command data can be sent in encrypted packet
+	 *
+	 * @return {number}
+	 */
+	get_max_encrypted_command_data_length : ->
+		# Total packet size length - version - segment ID - command - command_data_length - MAC - MAC (of command data)
+		@_packet_size - 1 - 2 - 1 - 2 - @_mac_length - @_mac_length
 	/**
 	 * @param {Uint8Array}	address
 	 * @param {Uint8Array}	segment_id
