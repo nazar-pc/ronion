@@ -216,8 +216,8 @@ Ronion:: =
 	 *
 	 * @param {Uint8Array}	address				Node at which routing path has started
 	 * @param {Uint8Array}	segment_id			Same segment ID as returned by CREATE_REQUEST
-	 * @param {Uint8Array}	next_node_address	Node to which routing path will be extended from current last node
-	 * @param {Uint8Array}	command_data		Add address length to max command data length, since `next_node_address` will be prepended to `command_data`
+	 * @param {Uint8Array}	next_node_address	Node to which routing path will be extended from current last node, will be prepended to `command_data`
+	 * @param {Uint8Array}	command_data		Subtract address length from max command data length, since `next_node_address` will be prepended
 	 *
 	 * @throws {RangeError}
 	 * @throws {ReferenceError}
@@ -229,11 +229,11 @@ Ronion:: =
 		# Harder command data length limit, since we need to fit address there as well
 		if command_data.length > (@get_max_command_data_length() - @_address_length)
 			throw new RangeError('Too much command data')
-		target_address	= @_outgoing_established_segments.get(source_id).slice(-1)[0]
-		command_data	= new Uint8Array(next_node_address.length + command_data.length)
+		target_address		= @_outgoing_established_segments.get(source_id).slice(-1)[0]
+		command_data_full	= new Uint8Array(next_node_address.length + command_data.length)
 			..set(next_node_address)
 			..set(command_data, next_node_address.length)
-		@_generate_packet_encrypted(address, segment_id, target_address, COMMAND_EXTEND_REQUEST, command_data).then (packet) !~>
+		@_generate_packet_encrypted(address, segment_id, target_address, COMMAND_EXTEND_REQUEST, command_data_full).then (packet) !~>
 			@fire('send', {address, packet})
 			@_pending_extensions.set(source_id, next_node_address)
 	/**

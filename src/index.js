@@ -231,14 +231,14 @@
      *
      * @param {Uint8Array}	address				Node at which routing path has started
      * @param {Uint8Array}	segment_id			Same segment ID as returned by CREATE_REQUEST
-     * @param {Uint8Array}	next_node_address	Node to which routing path will be extended from current last node
-     * @param {Uint8Array}	command_data		Add address length to max command data length, since `next_node_address` will be prepended to `command_data`
+     * @param {Uint8Array}	next_node_address	Node to which routing path will be extended from current last node, will be prepended to `command_data`
+     * @param {Uint8Array}	command_data		Subtract address length from max command data length, since `next_node_address` will be prepended
      *
      * @throws {RangeError}
      * @throws {ReferenceError}
      */,
     extend_request: function(address, segment_id, next_node_address, command_data){
-      var source_id, target_address, x$, this$ = this;
+      var source_id, target_address, x$, command_data_full, this$ = this;
       source_id = compute_source_id(address, segment_id);
       if (!this._outgoing_established_segments.has(source_id)) {
         throw new ReferenceError('There is no such segment established');
@@ -247,10 +247,10 @@
         throw new RangeError('Too much command data');
       }
       target_address = this._outgoing_established_segments.get(source_id).slice(-1)[0];
-      x$ = command_data = new Uint8Array(next_node_address.length + command_data.length);
+      x$ = command_data_full = new Uint8Array(next_node_address.length + command_data.length);
       x$.set(next_node_address);
       x$.set(command_data, next_node_address.length);
-      this._generate_packet_encrypted(address, segment_id, target_address, COMMAND_EXTEND_REQUEST, command_data).then(function(packet){
+      this._generate_packet_encrypted(address, segment_id, target_address, COMMAND_EXTEND_REQUEST, command_data_full).then(function(packet){
         this$.fire('send', {
           address: address,
           packet: packet
