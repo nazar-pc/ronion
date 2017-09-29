@@ -6,6 +6,9 @@
  * @license   MIT License, see license.txt
  */
 (function(){
+  /*
+   * Implements version 0.0.14 of the specification
+   */
   var asyncEventer, randombytes, COMMAND_CREATE_REQUEST, COMMAND_CREATE_RESPONSE, COMMAND_EXTEND_REQUEST, COMMAND_EXTEND_RESPONSE, COMMAND_DESTROY, COMMAND_DATA, MAX_PENDING_SEGMENTS, this$ = this;
   asyncEventer = require('async-eventer');
   randombytes = require('./randombytes');
@@ -401,6 +404,10 @@
       var packet_data_header_encrypted, source_id, this$ = this;
       packet_data_header_encrypted = packet_data.slice(0, 3 + this._mac_length);
       source_id = compute_source_id(address, segment_id);
+      if (!this._incoming_established_segments.has(source_id) && this._segments_forwarding_mapping.has(source_id)) {
+        this._forward_data(source_id, packet_data);
+        return;
+      }
       this._decrypt(address, segment_id, packet_data_header_encrypted).then(function(packet_data_header){
         var ref$, command, command_data_length, command_data_encrypted;
         ref$ = parse_packet_data_header(packet_data_header), command = ref$[0], command_data_length = ref$[1];
@@ -457,15 +464,18 @@
           }
         });
       })['catch'](function(){
-        var ref$, target_address, target_segment_id, packet;
         if (this$._segments_forwarding_mapping.has(source_id)) {
-          ref$ = this$._segments_forwarding_mapping.get(source_id), target_address = ref$[0], target_segment_id = ref$[1];
-          packet = generate_packet(this$._packet_size, this$._version, target_segment_id, packet_data);
-          this$.fire('send', {
-            address: target_address,
-            packet: packet
-          });
+          this$._forward_data(source_id, packet_data);
         }
+      });
+    },
+    _forward_data: function(source_id, packet_data){
+      var ref$, target_address, target_segment_id, packet;
+      ref$ = this._segments_forwarding_mapping.get(source_id), target_address = ref$[0], target_segment_id = ref$[1];
+      packet = generate_packet(this._packet_size, this._version, target_segment_id, packet_data);
+      return this.fire('send', {
+        address: target_address,
+        packet: packet
       });
     }
     /**

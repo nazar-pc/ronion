@@ -4,6 +4,9 @@
  * @copyright Copyright (c) 2017, Nazar Mokrynskyi
  * @license   MIT License, see license.txt
  */
+/*
+ * Implements version 0.0.14 of the specification
+ */
 async-eventer	= require('async-eventer')
 randombytes		= require('./randombytes')
 
@@ -343,6 +346,10 @@ Ronion:: =
 		# Packet data header size + MAC
 		packet_data_header_encrypted	= packet_data.slice(0, 3 + @_mac_length)
 		source_id						= compute_source_id(address, segment_id)
+		# When packets move in direction towards initiator, just forward without decryption attempt
+		if !@_incoming_established_segments.has(source_id) && @_segments_forwarding_mapping.has(source_id)
+			@_forward_data(source_id, packet_data)
+			return
 		@_decrypt(address, segment_id, packet_data_header_encrypted)
 			.then (packet_data_header) !~>
 				[command, command_data_length]	= parse_packet_data_header(packet_data_header)
@@ -375,9 +382,11 @@ Ronion:: =
 						@fire('data', {address, segment_id, command_data})
 			.catch !~>
 				if @_segments_forwarding_mapping.has(source_id)
-					[target_address, target_segment_id]	= @_segments_forwarding_mapping.get(source_id)
-					packet								= generate_packet(@_packet_size, @_version, target_segment_id, packet_data)
-					@fire('send', {address : target_address, packet})
+					@_forward_data(source_id, packet_data)
+	_forward_data : (source_id, packet_data) ->
+		[target_address, target_segment_id]	= @_segments_forwarding_mapping.get(source_id)
+		packet								= generate_packet(@_packet_size, @_version, target_segment_id, packet_data)
+		@fire('send', {address : target_address, packet})
 	/**
 	 * @param {Uint8Array} address
 	 *
