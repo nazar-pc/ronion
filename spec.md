@@ -1,6 +1,6 @@
 # Ronion anonymous routing protocol framework specification
 
-Specification version: 0.0.14
+Specification version: 0.1.0
 
 Author: Nazar Mokrynskyi
 
@@ -66,8 +66,8 @@ Total packet size is fixed and configured by application, padding with random by
 
 It is responsibility of the application to carefully count how many bytes can be sent in each particular command type with selected encryption algorithm and make sure data will fit into one packet (or split data into multiple packets if needed).
 
-#### [random_bytes_padding]
-Is used at the end of the packet to fill it til packet size (so that all packets have the same size).
+#### [zero_bytes_padding]
+Is added at the end of the command data when needed (so that all packets always have configured size).
 
 #### Commands
 Commands explain what node MUST do with the packet it has received, supported commands are listed below.
@@ -97,7 +97,7 @@ Is sent when creating segment of routing path is needed, can be send multiple ti
 
 Request data:
 ```
-[command: 1, 1][segment_creation_request_data_length: 2][segment_creation_request_data: segment_creation_request_data_length][random_bytes_padding]
+[command: 1, 1][segment_creation_request_data_length: 2][segment_creation_request_data: segment_creation_request_data_length][zero_bytes_padding]
 ```
 
 Request data handling:
@@ -110,7 +110,7 @@ Is sent as an answer to `CREATE_REQUEST`, is sent exactly once in response to ea
 
 Response data:
 ```
-[command: 1, 2][segment_creation_response_data_length: 2][segment_creation_response_data: segment_creation_response_data_length][random_bytes_padding]
+[command: 1, 2][segment_creation_response_data_length: 2][segment_creation_response_data: segment_creation_response_data_length][zero_bytes_padding]
 ```
 
 Response data handling:
@@ -122,10 +122,8 @@ These commands are used after establishing routing path segment with specified `
 
 Each encrypted command request data follows following pattern:
 ```
-{[command: 1][command_data_length: 2]}{[command_data]}[random_bytes_padding]
+{[command: 1][command_data_length: 2][command_data][zero_bytes_padding]}
 ```
-
-Where `[command_data]` is encrypted separately and its meaning depends on the command. `[command_data]` is always present, even if `[command_data_length]` is `0`, so it should go through regular decryption process (in order to verify MAC and maintain consistent state).
 
 #### EXTEND_REQUEST command
 Is used in order to extend routing path one segment further, effectively generates `CREATE_REQUEST` to the next node, can be send multiple times to the same node if multiple roundtrips are needed.
@@ -134,17 +132,17 @@ If `[segment_id]` was previously extended to another node, that link between `[s
 
 Request data:
 ```
-{[command: 1, 3][address_and_segment_creation_request_data_length: 2]}{[next_node_address][segment_creation_request_data]}[random_bytes_padding]
+{[command: 1, 3][address_and_segment_creation_request_data_length: 2][next_node_address][segment_creation_request_data][zero_bytes_padding]}
 ```
 
 Request data handling:
 * decrypt command and command data length
-* if command is `EXTEND_REQUEST`, then decrypt `[next_node_address]` and `[segment_creation_request_data]` then send `CREATE_REQUEST` command to the `[next_node_address]` using newly generated `[segment_id]` for that segment
+* if command is `EXTEND_REQUEST` then send `CREATE_REQUEST` command with `[segment_creation_request_data]` command data to the `[next_node_address]` using newly generated `[segment_id]` for that segment
 * `[segment_id]` of the previous node and `[segment_id]` of the next node MUST be linked together by protocol implementation for future data forwarding
 
 `CREATE_REQUEST` request data being sent:
 ```
-[command: 1, 1][segment_creation_request_data_length: 2][segment_creation_request_data: segment_creation_request_data_length][random_bytes_padding]
+[command: 1, 1][segment_creation_request_data_length: 2][segment_creation_request_data: segment_creation_request_data_length][zero_bytes_padding]
 ```
 
 #### EXTEND_RESPONSE command
@@ -152,7 +150,7 @@ Is used in order to extend routing path one segment further, effectively wraps `
 
 Response data:
 ```
-{[command: 1, 4][segment_creation_response_data_length]}{[segment_creation_response_data]}[random_bytes_padding]
+{[command: 1, 4][segment_creation_response_data_length][segment_creation_response_data][zero_bytes_padding]}
 ```
 
 Where `[segment_creation_response_data_length]` and `[segment_creation_response_data]` parts are taken from `CREATE_RESPONSE` data directly (which were sent in response to `CREATE_REQUEST`)`.
@@ -165,7 +163,7 @@ Is used in order to destroy certain segment of the routing path. This command MU
 
 Request data:
 ```
-{[command: 1, 5][length: 2, 0]}{}[random_bytes_padding]
+{[command: 1, 5][length: 2, 0][zero_bytes_padding]}
 ```
 
 No response is needed for this command, can be sent to nodes if unsure whether node is still alive and will actually receive the message.
@@ -183,7 +181,7 @@ Is used to actually transfer useful data between applications on different nodes
 
 Request data:
 ```
-{[command: 1, 6][data_length: 2]}{[data]}[random_bytes_padding]
+{[command: 1, 6][data_length: 2][data][zero_bytes_padding]}
 ```
 
 #### Data forwarding
