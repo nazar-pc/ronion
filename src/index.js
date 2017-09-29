@@ -294,7 +294,7 @@
      * @throws {ReferenceError}
      */,
     extend_request: function(address, segment_id, next_node_address, command_data){
-      var source_id, target_address, packet_data_header, this$ = this;
+      var source_id, target_address, x$, this$ = this;
       source_id = compute_source_id(address, segment_id);
       if (!this._outgoing_established_segments.has(source_id)) {
         throw new ReferenceError('There is no such segment established');
@@ -303,22 +303,35 @@
         throw new RangeError('Too much command data');
       }
       target_address = this._outgoing_established_segments.get(source_id).slice(-1)[0];
-      packet_data_header = generate_packet_data_header(COMMAND_EXTEND_REQUEST, command_data.length);
-      this._encrypt(address, segment_id, target_address, packet_data_header).then(function(packet_data_header_encrypted){
-        var x$, command_data;
-        x$ = command_data = new Uint8Array(next_node_address.length + command_data.length);
-        x$.set(next_node_address);
-        x$.set(command_data, next_node_address.length);
-        this$._encrypt(address, segment_id, target_address, command_data).then(function(command_data_encrypted){
-          var packet_data, packet;
-          packet_data = generate_packet_data(packet_data_header_encrypted, command_data_encrypted);
-          packet = generate_packet(this$._packet_size, this$._version, segment_id, packet_data);
-          this$.fire('send', {
-            address: address,
-            packet: packet
-          });
-          this$._pending_extensions.set(source_id, next_node_address);
+      x$ = command_data = new Uint8Array(next_node_address.length + command_data.length);
+      x$.set(next_node_address);
+      x$.set(command_data, next_node_address.length);
+      this._generate_packet_encrypted(address, segment_id, target_address, COMMAND_EXTEND_REQUEST, command_data).then(function(packet){
+        this$.fire('send', {
+          address: address,
+          packet: packet
         });
+        this$._pending_extensions.set(source_id, next_node_address);
+      });
+    }
+    /**
+     * @param {Uint8Array}	address
+     * @param {Uint8Array}	segment_id
+     * @param {Uint8Array}	target_address
+     * @param {number}		command
+     * @param {Uint8Array}	command_data
+     *
+     * @return {Promise} Resolves with Uint8Array packet
+     */,
+    _generate_packet_encrypted: function(address, segment_id, target_address, command, command_data){
+      var packet_data_header, this$ = this;
+      packet_data_header = generate_packet_data_header(command, command_data.length);
+      return this._encrypt(address, segment_id, address, packet_data_header).then(function(packet_data_header_encrypted){
+        return this$._encrypt(address, segment_id, address, command_data);
+      }).then(function(command_data_encrypted){
+        var packet_data;
+        packet_data = generate_packet_data(packet_data_header_encrypted, command_data_encrypted);
+        return generate_packet(this$._packet_size, this$._version, segment_id, packet_data);
       });
     }
     /**
@@ -327,17 +340,11 @@
      * @param {Uint8Array}	command_data
      */,
     _extend_response: function(address, segment_id, command_data){
-      var packet_data_header, this$ = this;
-      packet_data_header = generate_packet_data_header(COMMAND_EXTEND_RESPONSE, command_data.length);
-      this._encrypt(address, segment_id, address, packet_data_header).then(function(packet_data_header_encrypted){
-        this$._encrypt(address, segment_id, address, command_data).then(function(command_data_encrypted){
-          var packet_data, packet;
-          packet_data = generate_packet_data(packet_data_header_encrypted, command_data_encrypted);
-          packet = generate_packet(this$._packet_size, this$._version, segment_id, packet_data);
-          this$.fire('send', {
-            address: address,
-            packet: packet
-          });
+      var this$ = this;
+      this._generate_packet_encrypted(address, segment_id, address, COMMAND_EXTEND_RESPONSE, command_data).then(function(packet){
+        this$.fire('send', {
+          address: address,
+          packet: packet
         });
       });
     }
@@ -348,7 +355,7 @@
      * @param {Uint8Array}	segment_id	Same segment ID as returned by CREATE_REQUEST
      */,
     destroy: function(address, segment_id){
-      var source_id, target_address, packet_data_header;
+      var source_id, target_address;
       source_id = compute_source_id(address, segment_id);
       if (!this$._outgoing_established_segments.has(source_id)) {
         throw new ReferenceError('There is no such segment established');
@@ -357,16 +364,10 @@
       if (!this$._outgoing_established_segments.get(source_id).length) {
         this$._outgoing_established_segments['delete'](source_id);
       }
-      packet_data_header = generate_packet_data_header(COMMAND_DESTROY, 0);
-      this$._encrypt(address, segment_id, target_address, packet_data_header).then(function(packet_data_header_encrypted){
-        this$._encrypt(address, segment_id, target_address, new Uint8Array).then(function(command_data_encrypted){
-          var packet_data, packet;
-          packet_data = generate_packet_data(packet_data_header_encrypted, command_data_encrypted);
-          packet = generate_packet(this$._packet_size, this$._version, segment_id, packet_data);
-          this$.fire('send', {
-            address: address,
-            packet: packet
-          });
+      this$._generate_packet_encrypted(address, segment_id, target_address, COMMAND_DESTROY, new Uint8Array).then(function(packet){
+        this$.fire('send', {
+          address: address,
+          packet: packet
         });
       });
     }
@@ -382,7 +383,7 @@
      * @throws {ReferenceError}
      */,
     data: function(address, segment_id, target_address, command_data){
-      var source_id, packet_data_header, this$ = this;
+      var source_id, this$ = this;
       source_id = compute_source_id(address, segment_id);
       if (!this._outgoing_established_segments.has(source_id)) {
         throw new ReferenceError('There is no such segment established');
@@ -390,16 +391,10 @@
       if (command_data.length > this.get_max_encrypted_command_data_length()) {
         throw new RangeError('Too much command data');
       }
-      packet_data_header = generate_packet_data_header(COMMAND_DATA, command_data.length);
-      this._encrypt(address, segment_id, target_address, packet_data_header).then(function(packet_data_header_encrypted){
-        this$._encrypt(address, segment_id, target_address, command_data).then(function(command_data_encrypted){
-          var packet_data, packet;
-          packet_data = generate_packet_data(packet_data_header_encrypted, command_data_encrypted);
-          packet = generate_packet(this$._packet_size, this$._version, segment_id, packet_data);
-          this$.fire('send', {
-            address: address,
-            packet: packet
-          });
+      this._generate_packet_encrypted(address, segment_id, target_address, COMMAND_DATA, command_data).then(function(packet){
+        this$.fire('send', {
+          address: address,
+          packet: packet
         });
       });
     }

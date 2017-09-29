@@ -275,29 +275,38 @@ Ronion:: =
 			throw new ReferenceError('There is no such segment established')
 		if command_data.length > @get_max_encrypted_command_data_length()
 			throw new RangeError('Too much command data')
-		target_address					= @_outgoing_established_segments.get(source_id).slice(-1)[0]
-		packet_data_header				= generate_packet_data_header(COMMAND_EXTEND_REQUEST, command_data.length)
-		(packet_data_header_encrypted)	<~! @_encrypt(address, segment_id, target_address, packet_data_header).then
-		command_data					= new Uint8Array(next_node_address.length + command_data.length)
+		target_address	= @_outgoing_established_segments.get(source_id).slice(-1)[0]
+		command_data	= new Uint8Array(next_node_address.length + command_data.length)
 			..set(next_node_address)
 			..set(command_data, next_node_address.length)
-		(command_data_encrypted)		<~! @_encrypt(address, segment_id, target_address, command_data).then
-		packet_data						= generate_packet_data(packet_data_header_encrypted, command_data_encrypted)
-		packet							= generate_packet(@_packet_size, @_version, segment_id, packet_data)
-		@fire('send', {address, packet})
-		@_pending_extensions.set(source_id, next_node_address)
+		@_generate_packet_encrypted(address, segment_id, target_address, COMMAND_EXTEND_REQUEST, command_data).then (packet) !~>
+			@fire('send', {address, packet})
+			@_pending_extensions.set(source_id, next_node_address)
+	/**
+	 * @param {Uint8Array}	address
+	 * @param {Uint8Array}	segment_id
+	 * @param {Uint8Array}	target_address
+	 * @param {number}		command
+	 * @param {Uint8Array}	command_data
+	 *
+	 * @return {Promise} Resolves with Uint8Array packet
+	 */
+	_generate_packet_encrypted : (address, segment_id, target_address, command, command_data) ->
+		packet_data_header	= generate_packet_data_header(command, command_data.length)
+		@_encrypt(address, segment_id, address, packet_data_header)
+			.then (packet_data_header_encrypted) ~>
+				@_encrypt(address, segment_id, address, command_data)
+			.then (command_data_encrypted) ~>
+				packet_data	= generate_packet_data(packet_data_header_encrypted, command_data_encrypted)
+				generate_packet(@_packet_size, @_version, segment_id, packet_data)
 	/**
 	 * @param {Uint8Array}	address
 	 * @param {Uint8Array}	segment_id
 	 * @param {Uint8Array}	command_data
 	 */
 	_extend_response : (address, segment_id, command_data) !->
-		packet_data_header				= generate_packet_data_header(COMMAND_EXTEND_RESPONSE, command_data.length)
-		(packet_data_header_encrypted)	<~! @_encrypt(address, segment_id, address, packet_data_header).then
-		(command_data_encrypted)		<~! @_encrypt(address, segment_id, address, command_data).then
-		packet_data						= generate_packet_data(packet_data_header_encrypted, command_data_encrypted)
-		packet							= generate_packet(@_packet_size, @_version, segment_id, packet_data)
-		@fire('send', {address, packet})
+		@_generate_packet_encrypted(address, segment_id, address, COMMAND_EXTEND_RESPONSE, command_data).then (packet) !~>
+			@fire('send', {address, packet})
 	/**
 	 * Must be called when it is needed to destroy last segment in routing path that starts with specified address and segment ID
 	 *
@@ -308,16 +317,12 @@ Ronion:: =
 		source_id		= compute_source_id(address, segment_id)
 		if !@_outgoing_established_segments.has(source_id)
 			throw new ReferenceError('There is no such segment established')
-		target_address					= @_outgoing_established_segments.get(source_id).pop()
+		target_address	= @_outgoing_established_segments.get(source_id).pop()
 		# Drop routing path entirely if no nodes left
 		if !@_outgoing_established_segments.get(source_id).length
 			@_outgoing_established_segments.delete(source_id)
-		packet_data_header				= generate_packet_data_header(COMMAND_DESTROY, 0)
-		(packet_data_header_encrypted)	<~! @_encrypt(address, segment_id, target_address, packet_data_header).then
-		(command_data_encrypted)		<~! @_encrypt(address, segment_id, target_address, new Uint8Array).then
-		packet_data						= generate_packet_data(packet_data_header_encrypted, command_data_encrypted)
-		packet							= generate_packet(@_packet_size, @_version, segment_id, packet_data)
-		@fire('send', {address, packet})
+		@_generate_packet_encrypted(address, segment_id, target_address, COMMAND_DESTROY, new Uint8Array).then (packet) !~>
+			@fire('send', {address, packet})
 	/**
 	 * Must be called in order to send data to the node in routing path that starts with specified address and segment ID, sends DATA
 	 *
@@ -335,12 +340,8 @@ Ronion:: =
 			throw new ReferenceError('There is no such segment established')
 		if command_data.length > @get_max_encrypted_command_data_length()
 			throw new RangeError('Too much command data')
-		packet_data_header				= generate_packet_data_header(COMMAND_DATA, command_data.length)
-		(packet_data_header_encrypted)	<~! @_encrypt(address, segment_id, target_address, packet_data_header).then
-		(command_data_encrypted)		<~! @_encrypt(address, segment_id, target_address, command_data).then
-		packet_data						= generate_packet_data(packet_data_header_encrypted, command_data_encrypted)
-		packet							= generate_packet(@_packet_size, @_version, segment_id, packet_data)
-		@fire('send', {address, packet})
+		@_generate_packet_encrypted(address, segment_id, target_address, COMMAND_DATA, command_data).then (packet) !~>
+			@fire('send', {address, packet})
 	/**
 	 * Convenient method for knowing how much command data can be sent in plaintext packet
 	 *
