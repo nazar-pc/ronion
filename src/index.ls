@@ -5,10 +5,9 @@
  * @license   MIT License, see license.txt
  */
 /*
- * Implements version 0.0.14 of the specification
+ * Implements version 0.1.0 of the specification
  */
 async-eventer	= require('async-eventer')
-randombytes		= require('./randombytes')
 
 module.exports = Ronion
 
@@ -43,28 +42,21 @@ function number_to_uint_array (number)
 /**
  * @param {Uint8Array} packet
  *
- * @return {array} [version: number, segment_id: Uint8Array]
+ * @return {array} [version: number, segment_id: Uint8Array, packet_data: Uint8Array]
  */
-function parse_packet_header (packet)
-	# First byte is version, next 2 bytes are segment_id
-	[packet[0], packet.subarray(1, 2)]
-
-/**
- * @param {Uint8Array} packet_data
- *
- * @return {number[]} [command, command_data_length]
- */
-function parse_packet_data_header (packet_data)
-	# First byte is command, next 2 bytes are command data length as unsigned integer in big endian format
-	[packet_data[0], uint_array_to_number(packet_data.subarray(1, 3))]
+function parse_packet (packet)
+	# First byte is version, next 2 bytes are segment_id and the rest are packet data
+	[packet[0], packet.subarray(1, 2), packet.subarray(3)]
 
 /**
  * @param {Uint8Array} packet_data
  *
  * @return {array} [command: number, command_data: Uint8Array]
  */
-function parse_packet_data_plaintext (packet_data)
-	[command, command_data_length]	= parse_packet_data_header(packet_data)
+function parse_packet_data (packet_data)
+	# First byte is command, next 2 bytes are command data length as unsigned integer in big endian format
+	command				= packet_data[0]
+	command_data_length	= uint_array_to_number(packet_data.subarray(1, 3))
 	[command, packet_data.slice(3, 3 + command_data_length)]
 
 /**
@@ -76,38 +68,24 @@ function parse_packet_data_plaintext (packet_data)
  * @return {Uint8Array}
  */
 function generate_packet (packet_size, version, segment_id, packet_data)
-	packet						= new Uint8Array(packet_size)
+	new Uint8Array(packet_size)
 		..set([version])
 		..set(segment_id, 1)
 		..set(packet_data, 3)
-	bytes_written				= 3 + packet_data.length
-	random_bytes_padding_length	= packet_size - bytes_written
-	if random_bytes_padding_length
-		packet.set(randombytes(random_bytes_padding_length), bytes_written)
-	packet
 
 /**
- * @param {Uint8Array}	packet_data_header
+ * @param {number}		command
  * @param {Uint8Array}	command_data
+ * @param {number}		max_command_data_length
  *
  * @return {Uint8Array}
  */
-function generate_packet_data (packet_data_header, command_data)
-	new Uint8Array(packet_data_header.length + command_data.length)
-		..set(packet_data_header)
-		..set(command_data, packet_data_header.length)
-
-/**
- * @param {number}	command
- * @param {number}	command_data_length
- *
- * @return {Uint8Array}
- */
-function generate_packet_data_header (command, command_data_length)
-	# First byte is command, next 2 bytes are command data length as unsigned integer in big endian format
-	new Uint8Array(3)
+function generate_packet_data (command, command_data, max_command_data_length)
+	# First byte is command, next 2 bytes are command data length as unsigned integer in big endian format, next are command data and the rest are zeroes
+	new Uint8Array(3 + max_command_data_length)
 		..set(command)
 		..set(number_to_uint_array(command_data_length), 1)
+		..set(command_data, 3)
 
 /**
  * @param {Uint8Array}	address
@@ -159,15 +137,14 @@ Ronion:: =
 		# Do nothing if packet or its size is incorrect
 		if packet.length != @_packet_size
 			return
-		[version, segment_id]	= parse_packet_header(packet)
+		[version, segment_id, packet_data]	= parse_packet(packet)
 		# Do nothing the version is unsupported
 		if version != @_version
 			return
 		source_id	= compute_source_id(address, segment_id)
-		packet_data	= packet.subarray(3)
 		# If segment is not established then we don't use encryption yet
 		source_id	= compute_source_id(address, segment_id)
-		if @_outgoing_established_segments.has(source_id) || @_incoming_established_segments.has(source_id)
+		if @_outgoing_established_segments.has(source_id) || @_incoming_established_segments.has(source_id) || @_segments_forwarding_mapping.has(source_id)
 			@_process_packet_data_encrypted(source_id, packet_data)
 		else
 			@_process_packet_data_plaintext(address, segment_id, packet_data)
@@ -286,9 +263,9 @@ Ronion:: =
 	/**
 	 * Must be called in order to send data to the node in routing path that starts with specified address and segment ID, sends DATA
 	 *
-	 * @param {Uint8Array}	address				Node at which routing path has started
-	 * @param {Uint8Array}	segment_id			Same segment ID as returned by CREATE_REQUEST
-	 * @param {Uint8Array}	target_address		Node to which data should be sent, in case of sending data back to the initiator is the same as `address`
+	 * @param {Uint8Array}	address			Node at which routing path has started
+	 * @param {Uint8Array}	segment_id		Same segment ID as returned by CREATE_REQUEST
+	 * @param {Uint8Array}	target_address	Node to which data should be sent, in case of sending data back to the initiator is the same as `address`
 	 * @param {Uint8Array}	command_data
 	 *
 	 * @throws {RangeError}
@@ -309,15 +286,15 @@ Ronion:: =
 	 */
 	get_max_command_data_length : ->
 		# We use the same length limit both for encrypted and plaintext packets command data, since plaintext can be wrapped into encrypted one
-		# Total packet size length - version - segment ID - command - command_data_length - MAC (of packet data header) - MAC (of command data)
-		@_packet_size - 1 - 2 - 1 - 2 - @_mac_length - @_mac_length
+		# Total packet size length - version - segment ID - command - command_data_length - MAC (of the packet data)
+		@_packet_size - 1 - 2 - 1 - 2 - @_mac_length
 	/**
 	 * @param {Uint8Array}	address
 	 * @param {Uint8Array}	segment_id
 	 * @param {Uint8Array}	packet_data
 	 */
 	_process_packet_data_plaintext : (address, segment_id, packet_data) !->
-		[command, command_data]	= parse_packet_data_plaintext(packet_data)
+		[command, command_data]	= parse_packet_data(packet_data)
 		switch command
 			case COMMAND_CREATE_REQUEST
 				@_mark_segment_as_pending(address, segment_id)
@@ -328,10 +305,9 @@ Ronion:: =
 					return
 				pending_segment_data	= @_pending_segments.get(source_id)
 				if pending_segment_data.original_source
+					# This is response from the node we've forwarded CREATE_REQUEST to, which originated from initiator, so let's wrap it in EXTEND_RESPONSE
 					original_source	= pending_segment_data.original_source
-					@_unmark_segment_as_pending(address, segment_id)
 					@_extend_response(original_source.address, original_source.segment_id, command_data)
-					@_add_segments_forwarding_mapping(address, segment_id, original_source.address, original_source.segment_id)
 				else
 					# After at least one create_response event received routing path segment should be considered half-established and destroy() should be called
 					# in order to drop half-established routing path segment
@@ -340,21 +316,17 @@ Ronion:: =
 	/**
 	 * @param {Uint8Array}	address
 	 * @param {Uint8Array}	segment_id
-	 * @param {Uint8Array}	packet_data
+	 * @param {Uint8Array}	packet_data_encrypted
 	 */
-	_process_packet_data_encrypted : (address, segment_id, packet_data) !->
-		# Packet data header size + MAC
-		packet_data_header_encrypted	= packet_data.slice(0, 3 + @_mac_length)
-		source_id						= compute_source_id(address, segment_id)
+	_process_packet_data_encrypted : (address, segment_id, packet_data_encrypted) !->
+		source_id	= compute_source_id(address, segment_id)
 		# When packets move in direction towards initiator, just forward without decryption attempt
 		if !@_incoming_established_segments.has(source_id) && @_segments_forwarding_mapping.has(source_id)
-			@_forward_data(source_id, packet_data)
+			@_forward_packet_data(source_id, packet_data_encrypted)
 			return
-		@_decrypt(address, segment_id, packet_data_header_encrypted)
-			.then (packet_data_header) !~>
-				[command, command_data_length]	= parse_packet_data_header(packet_data_header)
-				command_data_encrypted			= packet_data.slice(packet_data_header_encrypted.length, packet_data_header_encrypted.length + command_data_length)
-				(command_data)					<~! @_decrypt(address, segment_id, command_data_encrypted).then
+		@_decrypt(address, segment_id, packet_data_encrypted)
+			.then (packet_data) !~>
+				[command, command_data]	= parse_packet_data(packet_data)
 				switch command
 					case COMMAND_EXTEND_REQUEST
 						try
@@ -362,7 +334,10 @@ Ronion:: =
 							segment_creation_request_data	= command_data.subarray(@_address_length)
 							next_node_segment_id			= @create_request(next_node_address, segment_creation_request_data)
 							original_source					= {address, segment_id}
-							# segment will be marked as pending in `create_request()` call, but here we override it with additional data
+							forward_to						= {next_node_address, next_node_segment_id}
+							# Segment will be marked as pending in `create_request()` call, but here we override it with additional data
+							# Segment to the next node is not added to forwarding until source sends data this node can't decrypt
+							@_mark_segment_as_pending.set(address, segment_id, {forward_to})
 							@_mark_segment_as_pending.set(next_node_address, next_node_segment_id, {original_source})
 						catch e
 							if !(e instanceof RangeError)
@@ -382,10 +357,26 @@ Ronion:: =
 						@fire('data', {address, segment_id, command_data})
 			.catch !~>
 				if @_segments_forwarding_mapping.has(source_id)
-					@_forward_data(source_id, packet_data)
-	_forward_data : (source_id, packet_data) ->
+					@_forward_packet_data(source_id, packet_data_encrypted)
+				else if @_pending_segments.has(source_id)
+					# Now we've got packet on incoming segment, which is pending at the same time
+					# This can mean that segment was used to extend routing path to the next node (in which case there should be `forward_to`)
+					pending_segment_data	= @_pending_segments.get(source_id)
+					if pending_segment_data.forward_to
+						# Since we can't decrypt the packet, this means that the extension succeeded and initiator sends encrypted messages to that node
+						# We can now forwarding mapping for segments
+						{next_node_address, next_node_segment_id}	= pending_segment_data.forward_to
+						@_unmark_segment_as_pending(address, segment_id)
+						@_unmark_segment_as_pending(next_node_address, next_node_segment_id)
+						@_add_segments_forwarding_mapping(address, segment_id, next_node_address, next_node_segment_id)
+						@_forward_packet_data(source_id, packet_data_encrypted)
+	/**
+	 * @param {string}		source_id
+	 * @param {Uint8Array}	packet_data_encrypted
+	 */
+	_forward_packet_data : (source_id, packet_data_encrypted) !->
 		[target_address, target_segment_id]	= @_segments_forwarding_mapping.get(source_id)
-		packet								= generate_packet(@_packet_size, @_version, target_segment_id, packet_data)
+		packet								= generate_packet(@_packet_size, @_version, target_segment_id, packet_data_encrypted)
 		@fire('send', {address : target_address, packet})
 	/**
 	 * @param {Uint8Array} address
@@ -411,8 +402,7 @@ Ronion:: =
 	 * @return {Uint8Array}
 	 */
 	_generate_packet_plaintext : (segment_id, command, command_data) ->
-		packet_data_header	= generate_packet_data_header(command, command_data.length)
-		packet_data			= generate_packet_data(packet_data_header, command_data)
+		packet_data	= generate_packet_data(command, command_data, @get_max_command_data_length())
 		generate_packet(@_packet_size, @_version, segment_id, packet_data)
 	/**
 	 * @param {Uint8Array}	address
@@ -424,13 +414,9 @@ Ronion:: =
 	 * @return {Promise} Resolves with Uint8Array packet
 	 */
 	_generate_packet_encrypted : (address, segment_id, target_address, command, command_data) ->
-		packet_data_header	= generate_packet_data_header(command, command_data.length)
-		@_encrypt(address, segment_id, address, packet_data_header)
-			.then (packet_data_header_encrypted) ~>
-				@_encrypt(address, segment_id, address, command_data)
-			.then (command_data_encrypted) ~>
-				packet_data	= generate_packet_data(packet_data_header_encrypted, command_data_encrypted)
-				generate_packet(@_packet_size, @_version, segment_id, packet_data)
+		packet_data	= generate_packet_data(command, command_data, @get_max_command_data_length())
+		@_encrypt(address, segment_id, address, packet_data).then (command_data_encrypted) ~>
+			generate_packet(@_packet_size, @_version, segment_id, packet_data)
 	/**
 	 * @param {Uint8Array}	address1
 	 * @param {Uint8Array}	segment_id1
