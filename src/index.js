@@ -82,8 +82,8 @@
   function generate_packet_data(command, command_data, max_command_data_length){
     var x$;
     x$ = new Uint8Array(3 + max_command_data_length);
-    x$.set(command);
-    x$.set(number_to_uint_array(command_data_length), 1);
+    x$.set([command]);
+    x$.set(number_to_uint_array(command_data.length), 1);
     x$.set(command_data, 3);
     return x$;
   }
@@ -575,7 +575,8 @@
      * @param {Uint8Array}	segment_id
      */,
     _unmark_segment_as_pending: function(address, segment_id){
-      var segment_id_string, pending_address_segments, i$, len$, i, existing_segment_id;
+      var source_id, segment_id_string, pending_address_segments, i$, len$, i, existing_segment_id;
+      source_id = compute_source_id(address, segment_id);
       if (!this._pending_segments.has(source_id)) {
         return;
       }

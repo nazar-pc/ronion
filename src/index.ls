@@ -80,8 +80,8 @@ function generate_packet (packet_size, version, segment_id, packet_data)
 function generate_packet_data (command, command_data, max_command_data_length)
 	# First byte is command, next 2 bytes are command data length as unsigned integer in big endian format, next are command data and the rest are zeroes
 	new Uint8Array(3 + max_command_data_length)
-		..set(command)
-		..set(number_to_uint_array(command_data_length), 1)
+		..set([command])
+		..set(number_to_uint_array(command_data.length), 1)
 		..set(command_data, 3)
 
 /**
@@ -468,6 +468,7 @@ Ronion:: =
 	 * @param {Uint8Array}	segment_id
 	 */
 	_unmark_segment_as_pending : (address, segment_id) !->
+		source_id	= compute_source_id(address, segment_id)
 		if !@_pending_segments.has(source_id)
 			return
 		@_pending_segments.delete(source_id)
