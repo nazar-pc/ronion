@@ -108,7 +108,7 @@
   function Ronion(version, packet_size, address_length, mac_length, max_pending_segments){
     max_pending_segments == null && (max_pending_segments = 10);
     if (!(this instanceof Ronion)) {
-      return new Ronion(version, packet_size, address_length, mac_length);
+      return new Ronion(version, packet_size, address_length, mac_length, max_pending_segments);
     }
     asyncEventer.call(this);
     this._version = version;

@@ -104,7 +104,7 @@ function compute_source_id (address, segment_id)
  */
 !function Ronion (version, packet_size, address_length, mac_length, max_pending_segments = 10)
 	if !(@ instanceof Ronion)
-		return new Ronion(version, packet_size, address_length, mac_length)
+		return new Ronion(version, packet_size, address_length, mac_length, max_pending_segments)
 	async-eventer.call(@)
 
 	@_version							= version
