@@ -338,7 +338,8 @@
      * @param {Uint8Array}	packet_data
      */,
     _process_packet_data_plaintext: function(address, segment_id, packet_data){
-      var ref$, command, command_data, pending_segment_data, original_source;
+      var source_id, ref$, command, command_data, pending_segment_data, original_source;
+      source_id = compute_source_id(address, segment_id);
       ref$ = parse_packet_data(packet_data), command = ref$[0], command_data = ref$[1];
       switch (command) {
       case COMMAND_CREATE_REQUEST:
@@ -365,10 +366,6 @@
           });
         }
       }
-      this.fire('send', {
-        address: address,
-        packet: packet
-      });
     }
     /**
      * @param {Uint8Array}	address
@@ -575,12 +572,13 @@
      * @param {Uint8Array}	segment_id
      */,
     _unmark_segment_as_pending: function(address, segment_id){
-      var source_id, segment_id_string, pending_address_segments, i$, len$, i, existing_segment_id;
+      var source_id, address_string, segment_id_string, pending_address_segments, i$, len$, i, existing_segment_id;
       source_id = compute_source_id(address, segment_id);
       if (!this._pending_segments.has(source_id)) {
         return;
       }
       this._pending_segments['delete'](source_id);
+      address_string = address.join('');
       segment_id_string = segment_id.join('');
       pending_address_segments = this._pending_address_segments.get(address_string);
       for (i$ = 0, len$ = pending_address_segments.length; i$ < len$; ++i$) {

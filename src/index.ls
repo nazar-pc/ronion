@@ -293,6 +293,7 @@ Ronion:: =
 	 * @param {Uint8Array}	packet_data
 	 */
 	_process_packet_data_plaintext : (address, segment_id, packet_data) !->
+		source_id	= compute_source_id(address, segment_id)
 		[command, command_data]	= parse_packet_data(packet_data)
 		switch command
 			case COMMAND_CREATE_REQUEST
@@ -311,7 +312,6 @@ Ronion:: =
 					# After at least one create_response event received routing path segment should be considered half-established and destroy() should be called
 					# in order to drop half-established routing path segment
 					@fire('create_response', {address, segment_id, command_data})
-		@fire('send', {address, packet})
 	/**
 	 * @param {Uint8Array}	address
 	 * @param {Uint8Array}	segment_id
@@ -473,6 +473,7 @@ Ronion:: =
 			return
 		@_pending_segments.delete(source_id)
 
+		address_string				= address.join('')
 		segment_id_string			= segment_id.join('')
 		pending_address_segments	= @_pending_address_segments.get(address_string)
 		for existing_segment_id, i in pending_address_segments
