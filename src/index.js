@@ -9,7 +9,7 @@
   /*
    * Implements version 0.1.0 of the specification
    */
-  var asyncEventer, COMMAND_CREATE_REQUEST, COMMAND_CREATE_RESPONSE, COMMAND_EXTEND_REQUEST, COMMAND_EXTEND_RESPONSE, COMMAND_DESTROY, COMMAND_DATA, MAX_PENDING_SEGMENTS, this$ = this;
+  var asyncEventer, COMMAND_CREATE_REQUEST, COMMAND_CREATE_RESPONSE, COMMAND_EXTEND_REQUEST, COMMAND_EXTEND_RESPONSE, COMMAND_DESTROY, COMMAND_DATA, this$ = this;
   asyncEventer = require('async-eventer');
   module.exports = Ronion;
   COMMAND_CREATE_REQUEST = 1;
@@ -18,7 +18,6 @@
   COMMAND_EXTEND_RESPONSE = 4;
   COMMAND_DESTROY = 5;
   COMMAND_DATA = 6;
-  MAX_PENDING_SEGMENTS = 10;
   /**
    * @param {Uint8Array} array
    *
@@ -100,12 +99,14 @@
   /**
    * @constructor
    *
-   * @param {number}	version			0..255
-   * @param {number}	packet_size
-   * @param {number}	address_length
-   * @param {number}	mac_length
+   * @param {number}	version					0..255
+   * @param {number}	packet_size				Packets will always have exactly this size
+   * @param {number}	address_length			Length of the node address
+   * @param {number}	mac_length				Length of the MAC that is added to ciphertext during encryption
+   * @param {number}	[max_pending_segments]	How much segments can be in pending state per one address
    */
-  function Ronion(version, packet_size, address_length, mac_length){
+  function Ronion(version, packet_size, address_length, mac_length, max_pending_segments){
+    max_pending_segments == null && (max_pending_segments = 10);
     if (!(this instanceof Ronion)) {
       return new Ronion(version, packet_size, address_length, mac_length);
     }
@@ -114,6 +115,7 @@
     this._packet_size = packet_size;
     this._address_length = address_length;
     this._mac_length = mac_length;
+    this._max_pending_segments = max_pending_segments;
     this._outgoing_established_segments = new Map;
     this._incoming_established_segments = new Set;
     this._pending_segments = new Map;
@@ -562,7 +564,7 @@
       }
       pending_address_segments = this._pending_address_segments.get(address_string);
       pending_address_segments.push(segment_id);
-      if (pending_address_segments.length > MAX_PENDING_SEGMENTS) {
+      if (pending_address_segments.length > this._max_pending_segments) {
         old_pending_segment_id = pending_address_segments.shift();
         this._unmark_segment_as_pending(address, old_pending_segment_id);
       }

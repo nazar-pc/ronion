@@ -18,9 +18,6 @@ const COMMAND_EXTEND_RESPONSE	= 4
 const COMMAND_DESTROY			= 5
 const COMMAND_DATA				= 6
 
-# How much segments can be in pending state per one address
-const MAX_PENDING_SEGMENTS		= 10
-
 /**
  * @param {Uint8Array} array
  *
@@ -99,12 +96,13 @@ function compute_source_id (address, segment_id)
 /**
  * @constructor
  *
- * @param {number}	version			0..255
- * @param {number}	packet_size
- * @param {number}	address_length
- * @param {number}	mac_length
+ * @param {number}	version					0..255
+ * @param {number}	packet_size				Packets will always have exactly this size
+ * @param {number}	address_length			Length of the node address
+ * @param {number}	mac_length				Length of the MAC that is added to ciphertext during encryption
+ * @param {number}	[max_pending_segments]	How much segments can be in pending state per one address
  */
-!function Ronion (version, packet_size, address_length, mac_length)
+!function Ronion (version, packet_size, address_length, mac_length, max_pending_segments = 10)
 	if !(@ instanceof Ronion)
 		return new Ronion(version, packet_size, address_length, mac_length)
 	async-eventer.call(@)
@@ -113,6 +111,7 @@ function compute_source_id (address, segment_id)
 	@_packet_size						= packet_size
 	@_address_length					= address_length
 	@_mac_length						= mac_length
+	@_max_pending_segments				= max_pending_segments
 	# Map of outgoing established segments (first nodes in routing path) to list of nodes in routing path
 	@_outgoing_established_segments		= new Map
 	# Set of incoming established segments (created upon CREATE_REQUEST from previous node)
@@ -461,7 +460,7 @@ Ronion:: =
 			@_pending_address_segments.set(address_string, [])
 		pending_address_segments	= @_pending_address_segments.get(address_string)
 		pending_address_segments.push(segment_id)
-		if pending_address_segments.length > MAX_PENDING_SEGMENTS
+		if pending_address_segments.length > @_max_pending_segments
 			old_pending_segment_id	= pending_address_segments.shift()
 			@_unmark_segment_as_pending(address, old_pending_segment_id)
 	/**
