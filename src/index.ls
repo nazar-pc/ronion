@@ -351,7 +351,7 @@ Ronion:: =
 						if @_incoming_established_segments.has(source_id)
 							@_incoming_established_segments.delete(source_id)
 							@_del_segments_forwarding_mapping(address, segment_id)
-							@fire('destroy', {address, segment_id})
+							@fire('destroy', {address, segment_id, command_data})
 					case COMMAND_DATA
 						@fire('data', {address, segment_id, command_data})
 			!~>

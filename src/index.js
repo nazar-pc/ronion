@@ -429,7 +429,8 @@
             this$._del_segments_forwarding_mapping(address, segment_id);
             this$.fire('destroy', {
               address: address,
-              segment_id: segment_id
+              segment_id: segment_id,
+              command_data: command_data
             });
           }
           break;
