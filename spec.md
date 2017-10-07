@@ -1,6 +1,6 @@
 # Ronion anonymous routing protocol framework specification
 
-Specification version: 0.2.0
+Specification version: 0.2.1
 
 Author: Nazar Mokrynskyi
 
@@ -232,4 +232,4 @@ This protocol framework is heavily inspired by [Tor](https://www.torproject.org/
 
 The address was intentionally not defined explicitly so that it can be anything, but the primary idea was to use this with DHT and use public key as both node ID in DHT and address in this protocol framework.
 
-The crypto layer that was kept in mind throughout designing was `XK` handshake pattern from [The Noise Protocol Framework](https://noiseprotocol.org/).
+The crypto layer that was kept in mind throughout designing was `IK` handshake pattern from [The Noise Protocol Framework](https://noiseprotocol.org/).
