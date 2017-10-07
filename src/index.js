@@ -7,7 +7,7 @@
  */
 (function(){
   /*
-   * Implements version 0.1.0 of the specification
+   * Implements version 0.2.0 of the specification
    */
   var asyncEventer, COMMAND_CREATE_REQUEST, COMMAND_CREATE_RESPONSE, COMMAND_EXTEND_REQUEST, COMMAND_EXTEND_RESPONSE, COMMAND_DESTROY, COMMAND_DATA, this$ = this;
   asyncEventer = require('async-eventer');
@@ -111,6 +111,10 @@
       return new Ronion(version, packet_size, address_length, mac_length, max_pending_segments);
     }
     asyncEventer.call(this);
+    /**
+     * Routing path segments naming:
+     * initiator -> incoming segment (previous node in routing path) -> middle node(s) -> outgoing segment (next node in routing path) -> responder
+     */
     this._version = version;
     this._packet_size = packet_size;
     this._address_length = address_length;
@@ -376,7 +380,7 @@
       var source_id, this$ = this;
       source_id = compute_source_id(address, segment_id);
       if (!this._incoming_established_segments.has(source_id) && this._segments_forwarding_mapping.has(source_id)) {
-        this._forward_packet_data(source_id, packet_data_encrypted);
+        this._forward_packet_data(address, segment_id, packet_data_encrypted);
         return;
       }
       this._decrypt(address, segment_id, packet_data_encrypted).then(function(packet_data){
@@ -441,7 +445,7 @@
       }, function(){
         var pending_segment_data, ref$, next_node_address, next_node_segment_id;
         if (this$._segments_forwarding_mapping.has(source_id)) {
-          this$._forward_packet_data(source_id, packet_data_encrypted);
+          this$._forward_packet_data(address, segment_id, packet_data_encrypted);
         } else if (this$._pending_segments.has(source_id)) {
           pending_segment_data = this$._pending_segments.get(source_id);
           if (pending_segment_data.forward_to) {
@@ -449,22 +453,27 @@
             this$._unmark_segment_as_pending(address, segment_id);
             this$._unmark_segment_as_pending(next_node_address, next_node_segment_id);
             this$._add_segments_forwarding_mapping(address, segment_id, next_node_address, next_node_segment_id);
-            this$._forward_packet_data(source_id, packet_data_encrypted);
+            this$._forward_packet_data(address, segment_id, packet_data_encrypted);
           }
         }
       });
     }
     /**
-     * @param {string}		source_id
+     * @param {Uint8Array}	source_address
+     * @param {Uint8Array}	source_segment_id
      * @param {Uint8Array}	packet_data_encrypted
      */,
-    _forward_packet_data: function(source_id, packet_data_encrypted){
-      var ref$, target_address, target_segment_id, packet;
+    _forward_packet_data: function(source_address, source_segment_id, packet_data_encrypted){
+      var source_id, ref$, target_address, target_segment_id, this$ = this;
+      source_id = compute_source_id(source_address, source_segment_id);
       ref$ = this._segments_forwarding_mapping.get(source_id), target_address = ref$[0], target_segment_id = ref$[1];
-      packet = generate_packet(this._packet_size, this._version, target_segment_id, packet_data_encrypted);
-      this.fire('send', {
-        address: target_address,
-        packet: packet
+      this._rewrap(source_address, source_segment_id, target_address, target_segment_id, encrypted_data).then(function(rewrapped_data){
+        var packet;
+        packet = generate_packet(this$._packet_size, this$._version, target_segment_id, rewrapped_data);
+        this$.fire('send', {
+          address: target_address,
+          packet: packet
+        });
       });
     }
     /**
@@ -512,7 +521,7 @@
     _generate_packet_encrypted: function(address, segment_id, target_address, command, command_data){
       var packet_data, this$ = this;
       packet_data = generate_packet_data(command, command_data, this.get_max_command_data_length());
-      return this._encrypt(address, segment_id, address, packet_data).then(function(command_data_encrypted){
+      return this._encrypt(address, segment_id, target_address, packet_data).then(function(command_data_encrypted){
         return generate_packet(this$._packet_size, this$._version, segment_id, packet_data);
       });
     }
@@ -653,6 +662,46 @@
           }
           return plaintext;
         });
+      });
+      promise['catch'](function(){});
+      return promise;
+    }
+    /**
+     * @param {Uint8Array}	source_address
+     * @param {Uint8Array}	source_segment_id
+     * @param {Uint8Array}	target_address
+     * @param {Uint8Array}	target_segment_id
+     * @param {Uint8Array}	encrypted_data
+     *
+     * @return {Promise} Will resolve with Uint8Array re-wrapped encrypted data
+     */,
+    _rewrap: function(source_address, source_segment_id, target_address, target_segment_id, encrypted_data){
+      var source_id, data, promise, this$ = this;
+      source_id = compute_source_id(source_address, source_segment_id);
+      if (this._incoming_established_segments.has(source_id)) {
+        data = {
+          address: source_address,
+          segment_id: source_segment_id,
+          data: encrypted_data,
+          rewrapped: null
+        };
+        promise = this.fire('unwrap', data);
+      } else {
+        data = {
+          address: target_address,
+          segment_id: target_segment_id,
+          data: encrypted_data,
+          rewrapped: null
+        };
+        promise = this.fire('wrap', data);
+      }
+      promise = promise.then(function(){
+        var rewrapped_data;
+        rewrapped_data = data.rewrapped;
+        if (!(rewrapped_data instanceof Uint8Array) || rewrapped_data.length !== encrypted_data.length) {
+          throw new Error('Re-wrapping failed');
+        }
+        return rewrapped_data;
       });
       promise['catch'](function(){});
       return promise;
