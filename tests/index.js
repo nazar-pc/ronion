@@ -152,10 +152,10 @@
       });
     });
     node.on('wrap', function(data){
-      return data.rewrapped = data.data.slice();
+      return data.wrapped = data.unwrapped.slice();
     });
     node.on('unwrap', function(data){
-      return data.rewrapped = data.data.slice();
+      return data.unwrapped = data.wrapped.slice();
     });
   }
 }).call(this);

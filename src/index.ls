@@ -5,7 +5,7 @@
  * @license   MIT License, see license.txt
  */
 /*
- * Implements version 0.2.0 of the specification
+ * Implements version 0.3.0 of the specification
  */
 async-eventer	= require('async-eventer')
 
@@ -321,12 +321,14 @@ Ronion:: =
 	 * @param {Uint8Array}	packet_data_encrypted
 	 */
 	_process_packet_data_encrypted : (address, segment_id, packet_data_encrypted) !->
-		source_id	= compute_source_id(address, segment_id)
+		# Always re-wrap encrypted data at least once
+		(packet_data_encrypted_rewrapped)	<~! @_rewrap(address, segment_id, packet_data_encrypted).then
+		source_id							= compute_source_id(address, segment_id)
 		# When packets move in direction towards initiator, just forward without decryption attempt
 		if !@_incoming_established_segments.has(source_id) && @_segments_forwarding_mapping.has(source_id)
-			@_forward_packet_data(address, segment_id, packet_data_encrypted)
+			@_forward_packet_data(address, segment_id, packet_data_encrypted_rewrapped)
 			return
-		@_decrypt(address, segment_id, packet_data_encrypted).then(
+		@_decrypt_and_unwrap(address, segment_id, packet_data_encrypted_rewrapped).then(
 			(packet_data) !~>
 				[command, command_data]	= parse_packet_data(packet_data)
 				switch command
@@ -359,7 +361,7 @@ Ronion:: =
 						@fire('data', {address, segment_id, command_data})
 			!~>
 				if @_segments_forwarding_mapping.has(source_id)
-					@_forward_packet_data(address, segment_id, packet_data_encrypted)
+					@_forward_packet_data(address, segment_id, packet_data_encrypted_rewrapped)
 				else if @_pending_segments.has(source_id)
 					# Now we've got packet on incoming segment, which is pending at the same time
 					# This can mean that segment was used to extend routing path to the next node (in which case there should be `forward_to`)
@@ -371,19 +373,16 @@ Ronion:: =
 						@_unmark_segment_as_pending(address, segment_id)
 						@_unmark_segment_as_pending(next_node_address, next_node_segment_id)
 						@_add_segments_forwarding_mapping(address, segment_id, next_node_address, next_node_segment_id)
-						@_forward_packet_data(address, segment_id, packet_data_encrypted)
+						@_forward_packet_data(address, segment_id, packet_data_encrypted_rewrapped)
 		)
 	/**
-	 * @param {Uint8Array}	source_address
-	 * @param {Uint8Array}	source_segment_id
+	 * @param {string}		source_id
 	 * @param {Uint8Array}	packet_data_encrypted
 	 */
-	_forward_packet_data : (source_address, source_segment_id, packet_data_encrypted) !->
-		source_id							= compute_source_id(source_address, source_segment_id)
-		[target_address, target_segment_id]	= @_segments_forwarding_mapping.get(source_id)
-		@_rewrap(source_address, source_segment_id, target_address, target_segment_id, encrypted_data).then (rewrapped_data) !~>
-			packet	= generate_packet(@_packet_size, @_version, target_segment_id, rewrapped_data)
-			@fire('send', {address : target_address, packet})
+	_forward_packet_data : (source_id, packet_data_encrypted) !->
+		[address, segment_id]	= @_segments_forwarding_mapping.get(source_id)
+		packet					= generate_packet(@_packet_size, @_version, segment_id, packet_data_encrypted)
+		@fire('send', {address, packet})
 	/**
 	 * @param {Uint8Array} address
 	 *
@@ -421,7 +420,7 @@ Ronion:: =
 	 */
 	_generate_packet_encrypted : (address, segment_id, target_address, command, command_data) ->
 		packet_data	= generate_packet_data(command, command_data, @get_max_command_data_length())
-		@_encrypt(address, segment_id, target_address, packet_data).then (command_data_encrypted) ~>
+		@_encrypt_and_wrap(address, segment_id, target_address, packet_data).then (command_data_encrypted) ~>
 			generate_packet(@_packet_size, @_version, segment_id, packet_data)
 	/**
 	 * @param {Uint8Array}	address1
@@ -494,13 +493,25 @@ Ronion:: =
 	 *
 	 * @return {Promise} Will resolve with Uint8Array ciphertext if encrypted successfully
 	 */
-	_encrypt : (address, segment_id, target_address, plaintext) ->
-		data	= {address, segment_id, target_address, plaintext, ciphertext : null}
-		promise	= @fire('encrypt', data).then ~>
+	_encrypt_and_wrap : (address, segment_id, target_address, plaintext) ->
+		source_id	= compute_source_id(address, segment_id)
+		data		= {address, segment_id, target_address, plaintext, ciphertext : null}
+		promise		= @fire('encrypt', data).then ~>
 			ciphertext	= data.ciphertext
 			if !(ciphertext instanceof Uint8Array) || ciphertext.length != (plaintext.length + @_mac_length)
 				throw new Error('Encryption failed')
 			ciphertext
+		# Now wrap ciphertext as many times as needed
+		if @_outgoing_established_segments.has(source_id)
+			target_addresses	= @_outgoing_established_segments.get(source_id)
+		else
+			target_addresses	= [target_address]
+		target_address_string	= target_address.join('')
+		target_addresses.every (target_address) ~>
+			promise	:= promise.then (ciphertext) ~>
+				@_wrap(address, segment_id, target_address, ciphertext)
+			# Stop wrapping further once we've reached target node
+			target_address_string != target_address.join('')
 		promise.catch(->) # Just to avoid unhandled promise rejection
 		promise
 	/**
@@ -510,22 +521,27 @@ Ronion:: =
 	 *
 	 * @return {Promise} Will resolve with Uint8Array plaintext if decrypted successfully
 	 */
-	_decrypt : (address, segment_id, ciphertext) ->
+	_decrypt_and_unwrap : (address, segment_id, ciphertext) ->
 		source_id	= compute_source_id(address, segment_id)
 		if @_outgoing_established_segments.has(source_id)
 			# If ciphertext comes from outgoing segment, it can be from any node in the routing path,
-			# Let't try to decrypt as it comes from each node in routing path starting from the last one
-			target_addresses	= @_outgoing_established_segments.get(source_id).slice().reverse()
+			# Let't try to decrypt as it comes from each node in routing path starting from the first one
+			target_addresses	= @_outgoing_established_segments.get(source_id)
 		else
 			# Otherwise it can only come from previous node, so let's try it
 			target_addresses	= [address]
 		promise	= Promise.reject()
 		data	= {address, segment_id, target_addresses : null, ciphertext, plaintext : null}
-		target_addresses.forEach (target_address) !~>
+		target_addresses.forEach (target_address, i) !~>
 			promise	:= promise
 				.catch ~>
 					data.target_address	= target_address
-					@fire('decrypt', data)
+					# Ciphertext is unwrapped once on arrival, so unwrap the rest of layers starting from second node in routing path
+					if i > 0
+						@_unwrap(address, segment_id, target_address, data.ciphertext).then (data.ciphertext) ~>
+							@fire('decrypt', data)
+					else
+						@fire('decrypt', data)
 				.then ->
 					plaintext	= data.plaintext
 					if !(plaintext instanceof Uint8Array) || plaintext.length != (ciphertext.length - @_mac_length)
@@ -536,25 +552,49 @@ Ronion:: =
 	/**
 	 * @param {Uint8Array}	source_address
 	 * @param {Uint8Array}	source_segment_id
-	 * @param {Uint8Array}	target_address
-	 * @param {Uint8Array}	target_segment_id
-	 * @param {Uint8Array}	encrypted_data
+	 * @param {Uint8Array}	data
 	 *
 	 * @return {Promise} Will resolve with Uint8Array re-wrapped encrypted data
 	 */
-	_rewrap : (source_address, source_segment_id, target_address, target_segment_id, encrypted_data) ->
+	_rewrap : (source_address, source_segment_id, data) ->
 		source_id	= compute_source_id(source_address, source_segment_id)
 		if @_incoming_established_segments.has(source_id)
-			data	= {address : source_address, segment_id : source_segment_id, data: encrypted_data, rewrapped : null}
-			promise	= @fire('unwrap', data)
+			@_unwrap(source_address, source_segment_id, source_address, data)
 		else
-			data	= {address : target_address, segment_id : target_segment_id, data: encrypted_data, rewrapped : null}
-			promise	= @fire('wrap', data)
-		promise	= promise.then ~>
-			rewrapped_data	= data.rewrapped
-			if !(rewrapped_data instanceof Uint8Array) || rewrapped_data.length != encrypted_data.length
+			[target_address, target_segment_id]	= @_segments_forwarding_mapping.get(source_id)
+			@_wrap(target_address, target_segment_id, target_address, data)
+	/**
+	 * @param {Uint8Array}	address
+	 * @param {Uint8Array}	segment_id
+	 * @param {Uint8Array}	target_address
+	 * @param {Uint8Array}	unwrapped
+	 *
+	 * @return {Promise} Will resolve with Uint8Array wrapped data
+	 */
+	_wrap : (address, segment_id, target_address, unwrapped) ->
+		data	= {address, segment_id, target_address, unwrapped, wrapped : null}
+		promise	= @fire('wrap', data).then ~>
+			wrapped	= data.wrapped
+			if !(wrapped instanceof Uint8Array) || wrapped.length != unwrapped.length
 				throw new Error('Re-wrapping failed')
-			rewrapped_data
+			wrapped
+		promise.catch(->) # Just to avoid unhandled promise rejection
+		promise
+	/**
+	 * @param {Uint8Array}	address
+	 * @param {Uint8Array}	segment_id
+	 * @param {Uint8Array}	target_address
+	 * @param {Uint8Array}	wrapped
+	 *
+	 * @return {Promise} Will resolve with Uint8Array unwrapped data
+	 */
+	_unwrap : (address, segment_id, target_address, wrapped) ->
+		data	= {address, segment_id, target_address, wrapped, unwrapped : null}
+		promise	= @fire('unwrap', data).then ~>
+			unwrapped	= data.unwrapped
+			if !(unwrapped instanceof Uint8Array) || unwrapped.length != wrapped.length
+				throw new Error('Re-wrapping failed')
+			unwrapped
 		promise.catch(->) # Just to avoid unhandled promise rejection
 		promise
 

@@ -97,12 +97,12 @@ for let node, source_address in nodes
 		encrypt(ciphertext, node[source_id]_local_encryption_key).then (data.plaintext) !->
 	)
 	node.on('wrap', (data) ->
-		# TODO: actual re-wrapping here and in encryption/decryption
-		data.rewrapped	= data.data.slice()
+		# TODO: actual unwrapping
+		data.wrapped	= data.unwrapped.slice()
 	)
 	node.on('unwrap', (data) ->
-		# TODO: actual re-wrapping here and in encryption/decryption
-		data.rewrapped	= data.data.slice()
+		# TODO: actual wrapping
+		data.unwrapped	= data.wrapped.slice()
 	)
 
 test('Ronion', (t) !->
