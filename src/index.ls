@@ -43,7 +43,7 @@ function number_to_uint_array (number)
  */
 function parse_packet (packet)
 	# First byte is version, next 2 bytes are segment_id and the rest are packet data
-	[packet[0], packet.subarray(1, 2), packet.subarray(3)]
+	[packet[0], packet.subarray(1, 3), packet.subarray(3)]
 
 /**
  * @param {Uint8Array} packet_data
@@ -144,7 +144,6 @@ Ronion:: =
 		# Do nothing the version is unsupported
 		if version != @_version
 			return
-		source_id	= compute_source_id(address, segment_id)
 		# If segment is not established then we don't use encryption yet
 		source_id	= compute_source_id(address, segment_id)
 		if @_outgoing_established_segments.has(source_id) || @_incoming_established_segments.has(source_id) || @_segments_forwarding_mapping.has(source_id)
@@ -340,8 +339,8 @@ Ronion:: =
 							forward_to						= {next_node_address, next_node_segment_id}
 							# Segment will be marked as pending in `create_request()` call, but here we override it with additional data
 							# Segment to the next node is not added to forwarding until source sends data this node can't decrypt
-							@_mark_segment_as_pending.set(address, segment_id, {forward_to})
-							@_mark_segment_as_pending.set(next_node_address, next_node_segment_id, {original_source})
+							@_mark_segment_as_pending(address, segment_id, {forward_to})
+							@_mark_segment_as_pending(next_node_address, next_node_segment_id, {original_source})
 						catch e
 							if !(e instanceof RangeError)
 								throw e

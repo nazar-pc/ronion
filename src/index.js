@@ -43,7 +43,7 @@
    * @return {array} [version: number, segment_id: Uint8Array, packet_data: Uint8Array]
    */
   function parse_packet(packet){
-    return [packet[0], packet.subarray(1, 2), packet.subarray(3)];
+    return [packet[0], packet.subarray(1, 3), packet.subarray(3)];
   }
   /**
    * @param {Uint8Array} packet_data
@@ -143,7 +143,6 @@
       if (version !== this._version) {
         return;
       }
-      source_id = compute_source_id(address, segment_id);
       source_id = compute_source_id(address, segment_id);
       if (this._outgoing_established_segments.has(source_id) || this._incoming_established_segments.has(source_id) || this._segments_forwarding_mapping.has(source_id)) {
         this._process_packet_data_encrypted(source_id, packet_data);
@@ -400,10 +399,10 @@
               next_node_address: next_node_address,
               next_node_segment_id: next_node_segment_id
             };
-            this$._mark_segment_as_pending.set(address, segment_id, {
+            this$._mark_segment_as_pending(address, segment_id, {
               forward_to: forward_to
             });
-            this$._mark_segment_as_pending.set(next_node_address, next_node_segment_id, {
+            this$._mark_segment_as_pending(next_node_address, next_node_segment_id, {
               original_source: original_source
             });
           } catch (e$) {
