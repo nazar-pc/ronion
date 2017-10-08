@@ -22,7 +22,7 @@ function encrypt (plaintext, [key])
 # Fake decryption
 function decrypt (encrypted, [key])
 	mac			= 0
-	plaintext	= encrypted.subarray(0, ciphertext.length - 1).map (character) ->
+	plaintext	= encrypted.subarray(0, encrypted.length - 1).map (character) ->
 		character	= character .^. key
 		mac += character
 		character
@@ -30,9 +30,7 @@ function decrypt (encrypted, [key])
 	if mac != encrypted[encrypted.length - 1]
 		Promise.reject()
 	else
-		Promise.resolve(
-			plaintext.slice(0, plaintext.length - 1)
-		)
+		Promise.resolve(plaintext)
 # Fake keys generator
 function generate_key
 	do
@@ -59,6 +57,7 @@ for let node, source_address in nodes
 	)
 	node.on('create_request', ({address, segment_id, command_data}) !->
 		if command_data.length == 1
+			node._in_segment_id						= segment_id
 			source_id								= compute_source_id(address, segment_id)
 			node[source_id]							=
 				_remote_encryption_key	: command_data
@@ -74,8 +73,10 @@ for let node, source_address in nodes
 	)
 	node.on('extend_response', ({address, segment_id, command_data}) !->
 		if command_data.length == 1
-			source_id								= compute_source_id(address, segment_id)
-			node[source_id]_remote_encryption_key	= command_data
+			source_id										= compute_source_id(address, segment_id)
+			target_address									= node._pending_extensions.get(source_id)
+			target_source_id								= compute_source_id(target_address, segment_id)
+			node[target_source_id]_remote_encryption_key	= command_data
 			node.confirm_extended_path(address, segment_id)
 	)
 	node.on('destroy', ({address, segment_id}) !->
@@ -94,7 +95,7 @@ for let node, source_address in nodes
 	node.on('decrypt', (data) ->
 		{address, segment_id, target_address, ciphertext}	= data
 		source_id											= compute_source_id(target_address, segment_id)
-		encrypt(ciphertext, node[source_id]_local_encryption_key).then (data.plaintext) !->
+		decrypt(ciphertext, node[source_id]_local_encryption_key).then (data.plaintext) !->
 	)
 	node.on('wrap', (data) ->
 		# TODO: actual unwrapping
@@ -114,21 +115,38 @@ test('Ronion', (t) !->
 	node_2	= nodes[2]
 
 	t.test('Create routing path (first segment)' (t) !->
-		t.plan(4)
-		address				= node_1._address
-		key					= generate_key()
-		node_1.once('create_request', ({command_data}) ->
+		t.plan(8)
+
+		# Establish first segment
+		node_1.once('create_request', ({command_data}) !->
 			t.equal(command_data.join(''), key.join(''), 'Create request works')
 		)
-		node_0.once('create_response', ({command_data}) ->
+		node_0.once('create_response', ({command_data}) !->
 			t.equal(command_data.length, 1, 'Create response works')
 			source_id_0	= compute_source_id(node_0._address, segment_id)
-			source_id_1	= compute_source_id(node_1._address, segment_id)
+			source_id_1	= compute_source_id(node_1._address, node_1._in_segment_id)
 			t.equal(node_0[source_id_1]_local_encryption_key.join(''), node_1[source_id_0]_remote_encryption_key.join(''), 'Encryption keys established #1')
 			t.equal(node_1[source_id_0]_local_encryption_key.join(''), node_0[source_id_1]_remote_encryption_key.join(''), 'Encryption keys established #2')
+
+			# Extend routing path by one more segment
+			node_2.once('create_request', ({command_data}) !->
+				t.equal(command_data.join(''), key.join(''), 'Extend request works and create request was called')
+			)
+			node_0.once('extend_response', ({command_data}) !->
+				t.equal(command_data.length, 1, 'Extend response works')
+				source_id_0	= compute_source_id(node_1._address, segment_id)
+				source_id_2	= compute_source_id(node_2._address, node_2._in_segment_id)
+				t.equal(node_0[source_id_2]_local_encryption_key.join(''), node_2[source_id_0]_remote_encryption_key.join(''), 'Encryption keys established #3')
+				t.equal(node_2[source_id_0]_local_encryption_key.join(''), node_0[source_id_2]_remote_encryption_key.join(''), 'Encryption keys established #4')
+			)
+			key					= generate_key()
+			source_id			= compute_source_id(node_2._address, segment_id)
+			node_0[source_id]	= {_local_encryption_key : key}
+			node_0.extend_request(node_1._address, segment_id, node_2._address, key)
 		)
-		segment_id			= node_0.create_request(address, key)
-		source_id			= compute_source_id(address, segment_id)
+		key					= generate_key()
+		segment_id			= node_0.create_request(node_1._address, key)
+		source_id			= compute_source_id(node_1._address, segment_id)
 		node_0[source_id]	= {_local_encryption_key : key}
 
 		# TODO: the rest

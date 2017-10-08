@@ -28,7 +28,7 @@
     var key, mac, plaintext;
     key = arg$[0];
     mac = 0;
-    plaintext = encrypted.subarray(0, ciphertext.length - 1).map(function(character){
+    plaintext = encrypted.subarray(0, encrypted.length - 1).map(function(character){
       character = character ^ key;
       mac += character;
       return character;
@@ -37,7 +37,7 @@
     if (mac !== encrypted[encrypted.length - 1]) {
       return Promise.reject();
     } else {
-      return Promise.resolve(plaintext.slice(0, plaintext.length - 1));
+      return Promise.resolve(plaintext);
     }
   }
   function generate_key(){
@@ -60,26 +60,45 @@
     node_1 = nodes[1];
     node_2 = nodes[2];
     t.test('Create routing path (first segment)', function(t){
-      var address, key, segment_id, source_id;
-      t.plan(4);
-      address = node_1._address;
-      key = generate_key();
+      var key, segment_id, source_id;
+      t.plan(8);
       node_1.once('create_request', function(arg$){
         var command_data;
         command_data = arg$.command_data;
-        return t.equal(command_data.join(''), key.join(''), 'Create request works');
+        t.equal(command_data.join(''), key.join(''), 'Create request works');
       });
       node_0.once('create_response', function(arg$){
-        var command_data, source_id_0, source_id_1;
+        var command_data, source_id_0, source_id_1, key, source_id;
         command_data = arg$.command_data;
         t.equal(command_data.length, 1, 'Create response works');
         source_id_0 = compute_source_id(node_0._address, segment_id);
-        source_id_1 = compute_source_id(node_1._address, segment_id);
+        source_id_1 = compute_source_id(node_1._address, node_1._in_segment_id);
         t.equal(node_0[source_id_1]._local_encryption_key.join(''), node_1[source_id_0]._remote_encryption_key.join(''), 'Encryption keys established #1');
-        return t.equal(node_1[source_id_0]._local_encryption_key.join(''), node_0[source_id_1]._remote_encryption_key.join(''), 'Encryption keys established #2');
+        t.equal(node_1[source_id_0]._local_encryption_key.join(''), node_0[source_id_1]._remote_encryption_key.join(''), 'Encryption keys established #2');
+        node_2.once('create_request', function(arg$){
+          var command_data;
+          command_data = arg$.command_data;
+          t.equal(command_data.join(''), key.join(''), 'Extend request works and create request was called');
+        });
+        node_0.once('extend_response', function(arg$){
+          var command_data, source_id_0, source_id_2;
+          command_data = arg$.command_data;
+          t.equal(command_data.length, 1, 'Extend response works');
+          source_id_0 = compute_source_id(node_1._address, segment_id);
+          source_id_2 = compute_source_id(node_2._address, node_2._in_segment_id);
+          t.equal(node_0[source_id_2]._local_encryption_key.join(''), node_2[source_id_0]._remote_encryption_key.join(''), 'Encryption keys established #3');
+          t.equal(node_2[source_id_0]._local_encryption_key.join(''), node_0[source_id_2]._remote_encryption_key.join(''), 'Encryption keys established #4');
+        });
+        key = generate_key();
+        source_id = compute_source_id(node_2._address, segment_id);
+        node_0[source_id] = {
+          _local_encryption_key: key
+        };
+        node_0.extend_request(node_1._address, segment_id, node_2._address, key);
       });
-      segment_id = node_0.create_request(address, key);
-      source_id = compute_source_id(address, segment_id);
+      key = generate_key();
+      segment_id = node_0.create_request(node_1._address, key);
+      source_id = compute_source_id(node_1._address, segment_id);
       node_0[source_id] = {
         _local_encryption_key: key
       };
@@ -96,6 +115,7 @@
       var address, segment_id, command_data, source_id;
       address = arg$.address, segment_id = arg$.segment_id, command_data = arg$.command_data;
       if (command_data.length === 1) {
+        node._in_segment_id = segment_id;
         source_id = compute_source_id(address, segment_id);
         node[source_id] = {
           _remote_encryption_key: command_data,
@@ -115,11 +135,13 @@
       }
     });
     node.on('extend_response', function(arg$){
-      var address, segment_id, command_data, source_id;
+      var address, segment_id, command_data, source_id, target_address, target_source_id;
       address = arg$.address, segment_id = arg$.segment_id, command_data = arg$.command_data;
       if (command_data.length === 1) {
         source_id = compute_source_id(address, segment_id);
-        node[source_id]._remote_encryption_key = command_data;
+        target_address = node._pending_extensions.get(source_id);
+        target_source_id = compute_source_id(target_address, segment_id);
+        node[target_source_id]._remote_encryption_key = command_data;
         node.confirm_extended_path(address, segment_id);
       }
     });
@@ -147,7 +169,7 @@
       var address, segment_id, target_address, ciphertext, source_id;
       address = data.address, segment_id = data.segment_id, target_address = data.target_address, ciphertext = data.ciphertext;
       source_id = compute_source_id(target_address, segment_id);
-      return encrypt(ciphertext, node[source_id]._local_encryption_key).then(function(plaintext){
+      return decrypt(ciphertext, node[source_id]._local_encryption_key).then(function(plaintext){
         data.plaintext = plaintext;
       });
     });
