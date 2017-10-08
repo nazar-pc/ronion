@@ -147,7 +147,7 @@ Ronion:: =
 		# If segment is not established then we don't use encryption yet
 		source_id	= compute_source_id(address, segment_id)
 		if @_outgoing_established_segments.has(source_id) || @_incoming_established_segments.has(source_id) || @_segments_forwarding_mapping.has(source_id)
-			@_process_packet_data_encrypted(source_id, packet_data)
+			@_process_packet_data_encrypted(address, segment_id, packet_data)
 		else
 			@_process_packet_data_plaintext(address, segment_id, packet_data)
 	/**
@@ -420,8 +420,8 @@ Ronion:: =
 	 */
 	_generate_packet_encrypted : (address, segment_id, target_address, command, command_data) ->
 		packet_data	= generate_packet_data(command, command_data, @get_max_command_data_length())
-		@_encrypt_and_wrap(address, segment_id, target_address, packet_data).then (command_data_encrypted) ~>
-			generate_packet(@_packet_size, @_version, segment_id, packet_data)
+		@_encrypt_and_wrap(address, segment_id, target_address, packet_data).then (packet_data_encrypted) ~>
+			generate_packet(@_packet_size, @_version, segment_id, packet_data_encrypted)
 	/**
 	 * @param {Uint8Array}	address1
 	 * @param {Uint8Array}	segment_id1
@@ -542,7 +542,7 @@ Ronion:: =
 							@fire('decrypt', data)
 					else
 						@fire('decrypt', data)
-				.then ->
+				.then ~>
 					plaintext	= data.plaintext
 					if !(plaintext instanceof Uint8Array) || plaintext.length != (ciphertext.length - @_mac_length)
 						throw new Error('Decryption failed')

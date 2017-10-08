@@ -145,7 +145,7 @@
       }
       source_id = compute_source_id(address, segment_id);
       if (this._outgoing_established_segments.has(source_id) || this._incoming_established_segments.has(source_id) || this._segments_forwarding_mapping.has(source_id)) {
-        this._process_packet_data_encrypted(source_id, packet_data);
+        this._process_packet_data_encrypted(address, segment_id, packet_data);
       } else {
         this._process_packet_data_plaintext(address, segment_id, packet_data);
       }
@@ -518,8 +518,8 @@
     _generate_packet_encrypted: function(address, segment_id, target_address, command, command_data){
       var packet_data, this$ = this;
       packet_data = generate_packet_data(command, command_data, this.get_max_command_data_length());
-      return this._encrypt_and_wrap(address, segment_id, target_address, packet_data).then(function(command_data_encrypted){
-        return generate_packet(this$._packet_size, this$._version, segment_id, packet_data);
+      return this._encrypt_and_wrap(address, segment_id, target_address, packet_data).then(function(packet_data_encrypted){
+        return generate_packet(this$._packet_size, this$._version, segment_id, packet_data_encrypted);
       });
     }
     /**
@@ -674,7 +674,7 @@
         }).then(function(){
           var plaintext;
           plaintext = data.plaintext;
-          if (!(plaintext instanceof Uint8Array) || plaintext.length !== ciphertext.length - this._mac_length) {
+          if (!(plaintext instanceof Uint8Array) || plaintext.length !== ciphertext.length - this$._mac_length) {
             throw new Error('Decryption failed');
           }
           return plaintext;
