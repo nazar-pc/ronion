@@ -693,7 +693,7 @@
     _rewrap: function(source_address, source_segment_id, data){
       var source_id, ref$, target_address, target_segment_id;
       source_id = compute_source_id(source_address, source_segment_id);
-      if (this._incoming_established_segments.has(source_id)) {
+      if (this._outgoing_established_segments.has(source_id) || this._incoming_established_segments.has(source_id)) {
         return this._unwrap(source_address, source_segment_id, source_address, data);
       } else {
         ref$ = this._segments_forwarding_mapping.get(source_id), target_address = ref$[0], target_segment_id = ref$[1];

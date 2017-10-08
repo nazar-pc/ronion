@@ -558,7 +558,8 @@ Ronion:: =
 	 */
 	_rewrap : (source_address, source_segment_id, data) ->
 		source_id	= compute_source_id(source_address, source_segment_id)
-		if @_incoming_established_segments.has(source_id)
+		# If coming to initiator from the first node in routing path or moving towards responder - unwrap
+		if @_outgoing_established_segments.has(source_id) || @_incoming_established_segments.has(source_id)
 			@_unwrap(source_address, source_segment_id, source_address, data)
 		else
 			[target_address, target_segment_id]	= @_segments_forwarding_mapping.get(source_id)
