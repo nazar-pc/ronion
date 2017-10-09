@@ -30,7 +30,7 @@
 		"minify" : "gulp minify"
 	},
 	"dependencies"    : {
-		"async-eventer" : "^1.0.0"
+		"async-eventer" : "^1.1.0"
 	},
 	"devDependencies" : {
 		"google-closure-compiler-js" : "^20170910.0.0",
