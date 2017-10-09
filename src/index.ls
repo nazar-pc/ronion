@@ -109,7 +109,7 @@ function compute_source_id (address, segment_id)
 
 	/**
 	 * Routing path segments naming:
-	 * initiator -> incoming segment (previous node in routing path) -> middle node(s) -> outgoing segment (next node in routing path) -> responder
+	 * initiator [outgoing segment] -> [incoming segment] middle node #1 -> [incoming segment] middle node #2 -> [incoming segment] -> responder
 	 */
 	@_version							= version
 	@_packet_size						= packet_size

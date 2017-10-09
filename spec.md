@@ -1,6 +1,6 @@
 # Ronion anonymous routing protocol framework specification
 
-Specification version: 0.3.0
+Specification version: 0.3.1
 
 Author: Nazar Mokrynskyi
 
@@ -11,6 +11,15 @@ This document is a textual specification of the Ronion anonymous routing protoco
 The goal of this document is to give enough guidance to permit a complete and correct implementation of the protocol.
 
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED",  "MAY", and "OPTIONAL" in this document are to be interpreted as described in IETF [RFC 2119](http://www.ietf.org/rfc/rfc2119.txt).
+
+#### What Ronion is and what isn't
+Ronion's primary goal is to provide a well defined, easy to follow and secure specification for anonymous routing that can be relied upon when building higher level protocols in order to reduce the number of decisions that need to be made.
+
+The protocol framework is deliberately designed in a generic way, so that it would be possible to use it with different cryptographic algorithms, transport layers and nodes selection approaches.
+
+This framework (in contrast to Tor, mix net) doesn't specify how exactly nodes are selected and even what nodes addresses are - those are application layer decisions.
+It only specifies how communication SHOULD happen and provides basic building blocks for higher level protocols.
+In fact, this framework can be used as the foundation for Tor-like routing or mix network implementations.
 
 #### Glossary
 * Initiator: the node that initiates communication
@@ -41,8 +50,10 @@ All numbers are unsigned integers in big endian format.
 #### Address
 Address format is defined by application and MUST have constant length.
 
+Address is typically either IP:port combination or public key of the node.
+
 #### Re-wrapping
-Re-wrapping a process of non-authenticated encryption or decryption using synchronous stream cipher, which is basically applying bitwise XOR ot one bit at a time. Wrapping and unwrapping are exactly the same bitwise XOR operations, so they will be often called re-wrapping for simplicity.
+Re-wrapping a process of non-authenticated encryption or decryption using synchronous stream cipher, which is basically applying bitwise XOR to one bit at a time. Wrapping and unwrapping are exactly the same bitwise XOR operations, so they will be often called re-wrapping for simplicity.
 
 When initiator sends encrypted data to the last node in routing path it wraps (encrypts without authentication) encrypted data multiple times and each node in routing path unwraps (decrypts without authentication) it before encrypted data reach responder. When some node sends data to initiator, it will wrap encrypted data, each node in the routing path will also wrap encrypted data and initiator will eventually unwrap data necessary number of times.
 
@@ -92,13 +103,18 @@ The list of supported commands is given below, unused numbers are reserved for f
 | DATA            | 6             |
 
 ### Routing path construction
+Before routing path construction happens, application layer MUST select:
+* encryption algorithm for end-to-end authenticated encryption
+* stream cipher for re-wrapping
+* a list of nodes (represented by their addresses) that will together form a routing path
+
 Routing path construction is started by initiator with sending `CREATE_REQUEST` command(s) to the first node in routing path in order to create the first routing path segment and receives `CREATE_RESPONSE` command(s) back.
 
-After last `CREATE_RESPONSE` each side should have:
+After last `CREATE_RESPONSE` received by initiator each side should have:
 * A pair of re-wrapping stream ciphers with unique random initial data that will be used for messages re-wrapping
 * A pair of unique objects for messages encryption and decryption
 
-We have 2 stream ciphers with their data and 2 encryption/decryption object so that data can be sent from initiator and to initiator independently.
+There will be 2 stream ciphers with their initial data and 2 encryption/decryption objects so that data can be sent by initiator and towards initiator independently (full-duplex).
 
 Then initiator sends `EXTEND_REQUEST` command(s) to the first node in order to extend the routing path by one more segment to the second node and receives `EXTEND_RESPONSE` command(s) back.
 Initiator keeps sending `EXTEND_REQUEST` commands to the last node in current routing path until last node in routing path is responder, at which point routing path is ready to send data back and forth.
@@ -233,3 +249,5 @@ This protocol framework is heavily inspired by [Tor](https://www.torproject.org/
 The address was intentionally not defined explicitly so that it can be anything, but the primary idea was to use this with DHT and use public key as both node ID in DHT and address in this protocol framework.
 
 The crypto layer that was kept in mind throughout designing was `IK` handshake pattern from [The Noise Protocol Framework](https://noiseprotocol.org/).
+
+Many thanks to Andrey Khavryuchenko for initial review and suggestions!
