@@ -108,14 +108,14 @@ for let node, source_address in nodes
 
 test('Ronion', (t) !->
 
-#	t.equal(nodes[0].get_max_command_data_length(), 505, 'Max command data length computed correctly')
+	t.equal(nodes[0].get_max_command_data_length(), 505, 'Max command data length computed correctly')
 
 	node_0	= nodes[0]
 	node_1	= nodes[1]
 	node_2	= nodes[2]
 
 	t.test('Create routing path (first segment)' (t) !->
-		t.plan(8)
+		t.plan(10)
 
 		# Establish first segment
 		node_1.once('create_request', ({command_data}) !->
@@ -138,6 +138,20 @@ test('Ronion', (t) !->
 				source_id_2	= compute_source_id(node_2._address, node_2._in_segment_id)
 				t.equal(node_0[source_id_2]_local_encryption_key.join(''), node_2[source_id_0]_remote_encryption_key.join(''), 'Encryption keys established #3')
 				t.equal(node_2[source_id_0]_local_encryption_key.join(''), node_0[source_id_2]_remote_encryption_key.join(''), 'Encryption keys established #4')
+
+				# Try sending data to the first node in routing path
+				data	= randombytes(30)
+				node_1.once('data', ({command_data}) !->
+					t.equal(command_data.join(''), data.join(''), 'Command data received fine #1')
+
+					# Try sending data to the second (and last) node in routing path
+					data2	= randombytes(30)
+					node_2.once('data', ({command_data}) !->
+						t.equal(command_data.join(''), data2.join(''), 'Command data received fine #2')
+					)
+					node_0.data(node_1._address, segment_id, node_2._address, data2)
+				)
+				node_0.data(node_1._address, segment_id, node_1._address, data)
 			)
 			key					= generate_key()
 			source_id			= compute_source_id(node_2._address, segment_id)
@@ -153,5 +167,5 @@ test('Ronion', (t) !->
 	)
 
 
-#	t.end()
+	t.end()
 )

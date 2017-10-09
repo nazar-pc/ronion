@@ -56,12 +56,13 @@
   }
   test('Ronion', function(t){
     var node_0, node_1, node_2;
+    t.equal(nodes[0].get_max_command_data_length(), 505, 'Max command data length computed correctly');
     node_0 = nodes[0];
     node_1 = nodes[1];
     node_2 = nodes[2];
     t.test('Create routing path (first segment)', function(t){
       var key, segment_id, source_id;
-      t.plan(8);
+      t.plan(10);
       node_1.once('create_request', function(arg$){
         var command_data;
         command_data = arg$.command_data;
@@ -81,13 +82,27 @@
           t.equal(command_data.join(''), key.join(''), 'Extend request works and create request was called');
         });
         node_0.once('extend_response', function(arg$){
-          var command_data, source_id_0, source_id_2;
+          var command_data, source_id_0, source_id_2, data;
           command_data = arg$.command_data;
           t.equal(command_data.length, 1, 'Extend response works');
           source_id_0 = compute_source_id(node_1._address, segment_id);
           source_id_2 = compute_source_id(node_2._address, node_2._in_segment_id);
           t.equal(node_0[source_id_2]._local_encryption_key.join(''), node_2[source_id_0]._remote_encryption_key.join(''), 'Encryption keys established #3');
           t.equal(node_2[source_id_0]._local_encryption_key.join(''), node_0[source_id_2]._remote_encryption_key.join(''), 'Encryption keys established #4');
+          data = randombytes(30);
+          node_1.once('data', function(arg$){
+            var command_data, data2;
+            command_data = arg$.command_data;
+            t.equal(command_data.join(''), data.join(''), 'Command data received fine #1');
+            data2 = randombytes(30);
+            node_2.once('data', function(arg$){
+              var command_data;
+              command_data = arg$.command_data;
+              t.equal(command_data.join(''), data2.join(''), 'Command data received fine #2');
+            });
+            node_0.data(node_1._address, segment_id, node_2._address, data2);
+          });
+          node_0.data(node_1._address, segment_id, node_1._address, data);
         });
         key = generate_key();
         source_id = compute_source_id(node_2._address, segment_id);
@@ -103,6 +118,7 @@
         _local_encryption_key: key
       };
     });
+    t.end();
   });
   function fn$(source_address, node){
     node._address = Uint8Array.of(source_address);

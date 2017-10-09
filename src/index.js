@@ -7,7 +7,7 @@
  */
 (function(){
   /*
-   * Implements version 0.3.0 of the specification
+   * Implements version 0.3.1 of the specification
    */
   var asyncEventer, COMMAND_CREATE_REQUEST, COMMAND_CREATE_RESPONSE, COMMAND_EXTEND_REQUEST, COMMAND_EXTEND_RESPONSE, COMMAND_DESTROY, COMMAND_DATA, this$ = this;
   asyncEventer = require('async-eventer');
@@ -381,7 +381,7 @@
         var source_id;
         source_id = compute_source_id(address, segment_id);
         if (!this$._incoming_established_segments.has(source_id) && this$._segments_forwarding_mapping.has(source_id)) {
-          this$._forward_packet_data(address, segment_id, packet_data_encrypted_rewrapped);
+          this$._forward_packet_data(source_id, packet_data_encrypted_rewrapped);
           return;
         }
         this$._decrypt_and_unwrap(address, segment_id, packet_data_encrypted_rewrapped).then(function(packet_data){
@@ -446,7 +446,7 @@
         }, function(){
           var pending_segment_data, ref$, next_node_address, next_node_segment_id;
           if (this$._segments_forwarding_mapping.has(source_id)) {
-            this$._forward_packet_data(address, segment_id, packet_data_encrypted_rewrapped);
+            this$._forward_packet_data(source_id, packet_data_encrypted_rewrapped);
           } else if (this$._pending_segments.has(source_id)) {
             pending_segment_data = this$._pending_segments.get(source_id);
             if (pending_segment_data.forward_to) {
@@ -454,7 +454,7 @@
               this$._unmark_segment_as_pending(address, segment_id);
               this$._unmark_segment_as_pending(next_node_address, next_node_segment_id);
               this$._add_segments_forwarding_mapping(address, segment_id, next_node_address, next_node_segment_id);
-              this$._forward_packet_data(address, segment_id, packet_data_encrypted_rewrapped);
+              this$._forward_packet_data(source_id, packet_data_encrypted_rewrapped);
             }
           }
         });

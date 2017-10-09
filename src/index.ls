@@ -5,7 +5,7 @@
  * @license   MIT License, see license.txt
  */
 /*
- * Implements version 0.3.0 of the specification
+ * Implements version 0.3.1 of the specification
  */
 async-eventer	= require('async-eventer')
 
@@ -326,7 +326,7 @@ Ronion:: =
 		source_id							= compute_source_id(address, segment_id)
 		# When packets move in direction towards initiator, just forward without decryption attempt
 		if !@_incoming_established_segments.has(source_id) && @_segments_forwarding_mapping.has(source_id)
-			@_forward_packet_data(address, segment_id, packet_data_encrypted_rewrapped)
+			@_forward_packet_data(source_id, packet_data_encrypted_rewrapped)
 			return
 		@_decrypt_and_unwrap(address, segment_id, packet_data_encrypted_rewrapped).then(
 			(packet_data) !~>
@@ -361,7 +361,7 @@ Ronion:: =
 						@fire('data', {address, segment_id, command_data})
 			!~>
 				if @_segments_forwarding_mapping.has(source_id)
-					@_forward_packet_data(address, segment_id, packet_data_encrypted_rewrapped)
+					@_forward_packet_data(source_id, packet_data_encrypted_rewrapped)
 				else if @_pending_segments.has(source_id)
 					# Now we've got packet on incoming segment, which is pending at the same time
 					# This can mean that segment was used to extend routing path to the next node (in which case there should be `forward_to`)
@@ -373,7 +373,7 @@ Ronion:: =
 						@_unmark_segment_as_pending(address, segment_id)
 						@_unmark_segment_as_pending(next_node_address, next_node_segment_id)
 						@_add_segments_forwarding_mapping(address, segment_id, next_node_address, next_node_segment_id)
-						@_forward_packet_data(address, segment_id, packet_data_encrypted_rewrapped)
+						@_forward_packet_data(source_id, packet_data_encrypted_rewrapped)
 		)
 	/**
 	 * @param {string}		source_id
