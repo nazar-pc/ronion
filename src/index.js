@@ -9,7 +9,7 @@
   /*
    * Implements version 0.3.1 of the specification
    */
-  var asyncEventer, COMMAND_CREATE_REQUEST, COMMAND_CREATE_RESPONSE, COMMAND_EXTEND_REQUEST, COMMAND_EXTEND_RESPONSE, COMMAND_DESTROY, COMMAND_DATA, this$ = this;
+  var asyncEventer, COMMAND_CREATE_REQUEST, COMMAND_CREATE_RESPONSE, COMMAND_EXTEND_REQUEST, COMMAND_EXTEND_RESPONSE, COMMAND_DESTROY, COMMAND_DATA;
   asyncEventer = require('async-eventer');
   module.exports = Ronion;
   COMMAND_CREATE_REQUEST = 1;
@@ -284,16 +284,16 @@
      * @param {Uint8Array}	segment_id	Same segment ID as returned by CREATE_REQUEST
      */,
     destroy: function(address, segment_id){
-      var source_id, target_address;
+      var source_id, target_address, this$ = this;
       source_id = compute_source_id(address, segment_id);
-      if (!this$._outgoing_established_segments.has(source_id)) {
+      if (!this._outgoing_established_segments.has(source_id)) {
         throw new ReferenceError('There is no such segment established');
       }
-      target_address = this$._outgoing_established_segments.get(source_id).pop();
-      if (!this$._outgoing_established_segments.get(source_id).length) {
-        this$._outgoing_established_segments['delete'](source_id);
+      target_address = this._outgoing_established_segments.get(source_id).pop();
+      if (!this._outgoing_established_segments.get(source_id).length) {
+        this._outgoing_established_segments['delete'](source_id);
       }
-      this$._generate_packet_encrypted(address, segment_id, target_address, COMMAND_DESTROY, new Uint8Array).then(function(packet){
+      this._generate_packet_encrypted(address, segment_id, target_address, COMMAND_DESTROY, new Uint8Array).then(function(packet){
         this$.fire('send', {
           address: address,
           packet: packet

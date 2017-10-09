@@ -252,7 +252,7 @@ Ronion:: =
 	 * @param {Uint8Array}	address		Node at which routing path has started
 	 * @param {Uint8Array}	segment_id	Same segment ID as returned by CREATE_REQUEST
 	 */
-	destroy : (address, segment_id) !~>
+	destroy : (address, segment_id) !->
 		source_id	= compute_source_id(address, segment_id)
 		if !@_outgoing_established_segments.has(source_id)
 			throw new ReferenceError('There is no such segment established')
