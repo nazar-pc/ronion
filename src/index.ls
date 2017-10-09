@@ -275,7 +275,7 @@ Ronion:: =
 	 */
 	data : (address, segment_id, target_address, command_data) !->
 		source_id	= compute_source_id(address, segment_id)
-		if !@_outgoing_established_segments.has(source_id)
+		if !@_outgoing_established_segments.has(source_id) && !@_incoming_established_segments.has(source_id)
 			throw new ReferenceError('There is no such segment established')
 		if command_data.length > @get_max_command_data_length()
 			throw new RangeError('Too much command data')

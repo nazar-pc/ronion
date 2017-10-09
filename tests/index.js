@@ -62,7 +62,7 @@
     node_2 = nodes[2];
     t.test('Create routing path (first segment)', function(t){
       var key, segment_id, source_id;
-      t.plan(23);
+      t.plan(25);
       node_1.once('create_request', function(arg$){
         var command_data;
         command_data = arg$.command_data;
@@ -82,47 +82,61 @@
           t.equal(command_data.join(''), key.join(''), 'Extend request works and create request was called');
         });
         node_0.once('extend_response', function(arg$){
-          var command_data, source_id_0, source_id_2, data;
+          var command_data, source_id_0, source_id_2, data_0_to_1;
           command_data = arg$.command_data;
           t.equal(command_data.length, 1, 'Extend response works');
           source_id_0 = compute_source_id(node_1._address, segment_id);
           source_id_2 = compute_source_id(node_2._address, node_2._in_segment_id);
           t.equal(node_0[source_id_2]._local_encryption_key.join(''), node_2[source_id_0]._remote_encryption_key.join(''), 'Encryption keys established #3');
           t.equal(node_2[source_id_0]._local_encryption_key.join(''), node_0[source_id_2]._remote_encryption_key.join(''), 'Encryption keys established #4');
-          data = randombytes(30);
+          data_0_to_1 = randombytes(30);
           node_1.once('data', function(arg$){
-            var command_data, data2;
+            var command_data, data_0_to_2;
             command_data = arg$.command_data;
-            t.equal(command_data.join(''), data.join(''), 'Command data received fine #1');
-            data2 = randombytes(30);
+            t.equal(command_data.join(''), data_0_to_1.join(''), 'Command data received fine #1');
+            data_0_to_2 = randombytes(30);
             node_2.once('data', function(arg$){
-              var command_data, source_id;
+              var command_data, data_1_to_0;
               command_data = arg$.command_data;
-              t.equal(command_data.join(''), data2.join(''), 'Command data received fine #2');
-              source_id = compute_source_id(node_1._address, segment_id);
-              t.equal(node_0._outgoing_established_segments.size, 1, 'Correct number of routes before destroying');
-              t.equal(node_0._outgoing_established_segments.get(source_id).length, 2, 'Correct route length before destroying');
-              t.equal(node_1._incoming_established_segments.size, 1, 'There is incoming segment on node 1 before destroying');
-              t.equal(node_1._segments_forwarding_mapping.size, 2, 'There is forwarding segments mapping on node 1 before destroying');
-              t.equal(node_2._incoming_established_segments.size, 1, 'There is incoming segment on node 2 before destroying');
-              node_2.once('destroy', function(){
-                t.equal(node_0._outgoing_established_segments.size, 1, 'Correct number of routes after first destroying');
-                t.equal(node_0._outgoing_established_segments.get(source_id).length, 1, 'Correct route length after first destroying');
-                t.equal(node_1._incoming_established_segments.size, 1, 'There is incoming segment on node 1 after first destroying');
-                t.equal(node_1._segments_forwarding_mapping.size, 2, 'There is still forwarding segments mapping on node 1 after first destroying');
-                t.equal(node_2._incoming_established_segments.size, 0, 'There is no incoming segment on node 2 after first destroying');
-                node_1.once('destroy', function(){
-                  t.equal(node_0._outgoing_established_segments.size, 0, 'No routes after second destroying');
-                  t.equal(node_1._incoming_established_segments.size, 0, 'There is no incoming segment on node 1 after second destroying');
-                  t.equal(node_1._segments_forwarding_mapping.size, 0, 'There is no forwarding segments mapping on node 1 after first destroying');
+              t.equal(command_data.join(''), data_0_to_2.join(''), 'Command data received fine #2');
+              data_1_to_0 = randombytes(30);
+              node_0.once('data', function(arg$){
+                var command_data, data_2_to_0;
+                command_data = arg$.command_data;
+                t.equal(command_data.join(''), data_1_to_0.join(''), 'Command data received fine #3');
+                data_2_to_0 = randombytes(30);
+                node_0.once('data', function(arg$){
+                  var command_data, source_id;
+                  command_data = arg$.command_data;
+                  t.equal(command_data.join(''), data_2_to_0.join(''), 'Command data received fine #4');
+                  source_id = compute_source_id(node_1._address, segment_id);
+                  t.equal(node_0._outgoing_established_segments.size, 1, 'Correct number of routes before destroying');
+                  t.equal(node_0._outgoing_established_segments.get(source_id).length, 2, 'Correct route length before destroying');
+                  t.equal(node_1._incoming_established_segments.size, 1, 'There is incoming segment on node 1 before destroying');
+                  t.equal(node_1._segments_forwarding_mapping.size, 2, 'There is forwarding segments mapping on node 1 before destroying');
+                  t.equal(node_2._incoming_established_segments.size, 1, 'There is incoming segment on node 2 before destroying');
+                  node_2.once('destroy', function(){
+                    t.equal(node_0._outgoing_established_segments.size, 1, 'Correct number of routes after first destroying');
+                    t.equal(node_0._outgoing_established_segments.get(source_id).length, 1, 'Correct route length after first destroying');
+                    t.equal(node_1._incoming_established_segments.size, 1, 'There is incoming segment on node 1 after first destroying');
+                    t.equal(node_1._segments_forwarding_mapping.size, 2, 'There is still forwarding segments mapping on node 1 after first destroying');
+                    t.equal(node_2._incoming_established_segments.size, 0, 'There is no incoming segment on node 2 after first destroying');
+                    node_1.once('destroy', function(){
+                      t.equal(node_0._outgoing_established_segments.size, 0, 'No routes after second destroying');
+                      t.equal(node_1._incoming_established_segments.size, 0, 'There is no incoming segment on node 1 after second destroying');
+                      t.equal(node_1._segments_forwarding_mapping.size, 0, 'There is no forwarding segments mapping on node 1 after first destroying');
+                    });
+                    node_0.destroy(node_1._address, segment_id);
+                  });
+                  node_0.destroy(node_1._address, segment_id);
                 });
-                node_0.destroy(node_1._address, segment_id);
+                node_2.data(node_1._address, node_2._in_segment_id, node_1._address, data_2_to_0);
               });
-              node_0.destroy(node_1._address, segment_id);
+              node_1.data(node_0._address, segment_id, node_0._address, data_1_to_0);
             });
-            node_0.data(node_1._address, segment_id, node_2._address, data2);
+            node_0.data(node_1._address, segment_id, node_2._address, data_0_to_2);
           });
-          node_0.data(node_1._address, segment_id, node_1._address, data);
+          node_0.data(node_1._address, segment_id, node_1._address, data_0_to_1);
         });
         key = generate_key();
         source_id = compute_source_id(node_2._address, segment_id);

@@ -314,7 +314,7 @@
     data: function(address, segment_id, target_address, command_data){
       var source_id, this$ = this;
       source_id = compute_source_id(address, segment_id);
-      if (!this._outgoing_established_segments.has(source_id)) {
+      if (!this._outgoing_established_segments.has(source_id) && !this._incoming_established_segments.has(source_id)) {
         throw new ReferenceError('There is no such segment established');
       }
       if (command_data.length > this.get_max_command_data_length()) {
