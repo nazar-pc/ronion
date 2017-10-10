@@ -6,18 +6,19 @@
  * @license   MIT License, see license.txt
  */
 (function(){
-  var crypto, lib, randombytes, test, KEY_LENGTH, MAC_LENGTH, keys_iv, nodes, received_data, i$, len$;
+  var crypto, lib, randombytes, test, KEY_LENGTH, MAC_LENGTH, encrypt_iv, wrap_iv, nodes, received_data, i$, len$;
   crypto = require('crypto');
   lib = require('..');
   randombytes = crypto.randomBytes;
   test = require('tape');
   KEY_LENGTH = 32;
   MAC_LENGTH = 16;
-  keys_iv = {};
+  encrypt_iv = {};
+  wrap_iv = {};
   function encrypt(plaintext, key){
     var iv, cipher, ciphertext, mac, x$, encrypted;
     iv = randombytes(16);
-    keys_iv[key.join('')] = iv;
+    encrypt_iv[key.join('')] = iv;
     cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
     ciphertext = cipher.update(plaintext);
     cipher.final();
@@ -29,22 +30,38 @@
   }
   function decrypt(encrypted, key){
     var iv, decipher, ciphertext, mac, plaintext, e;
-    iv = keys_iv[key.join('')];
-    decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
-    ciphertext = encrypted.subarray(0, encrypted.length - MAC_LENGTH);
-    mac = encrypted.subarray(encrypted.length - MAC_LENGTH);
-    decipher.setAuthTag(mac);
-    plaintext = decipher.update(ciphertext);
+    iv = encrypt_iv[key.join('')];
     try {
+      decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+      ciphertext = encrypted.subarray(0, encrypted.length - MAC_LENGTH);
+      mac = encrypted.subarray(encrypted.length - MAC_LENGTH);
+      decipher.setAuthTag(mac);
+      plaintext = decipher.update(ciphertext);
       decipher.final();
     } catch (e$) {
       e = e$;
       return Promise.reject();
     }
+    delete encrypt_iv[key.join('')];
     return Promise.resolve(plaintext);
   }
-  function generate_key(){
-    return randombytes(KEY_LENGTH);
+  function wrap(plaintext, key){
+    var iv, cipher, ciphertext;
+    iv = randombytes(16);
+    wrap_iv[key.join('')] = iv;
+    cipher = crypto.createCipheriv('aes-256-ctr', key, iv);
+    ciphertext = cipher.update(plaintext);
+    cipher.final();
+    return Promise.resolve(ciphertext);
+  }
+  function unwrap(ciphertext, key){
+    var iv, decipher, plaintext;
+    iv = wrap_iv[key.join('')];
+    delete wrap_iv[key.join('')];
+    decipher = crypto.createDecipheriv('aes-256-ctr', key, iv);
+    plaintext = decipher.update(ciphertext);
+    decipher.final();
+    return Promise.resolve(plaintext);
   }
   function compute_source_id(address, segment_id){
     return address.join('') + segment_id.join('');
@@ -137,14 +154,14 @@
           });
           node_0.data(node_1._address, segment_id, node_1._address, data_0_to_1);
         });
-        key = generate_key();
+        key = randombytes(KEY_LENGTH);
         source_id = compute_source_id(node_2._address, segment_id);
         node_0[source_id] = {
           _local_encryption_key: key
         };
         node_0.extend_request(node_1._address, segment_id, node_2._address, key);
       });
-      key = generate_key();
+      key = randombytes(KEY_LENGTH);
       segment_id = node_0.create_request(node_1._address, key);
       source_id = compute_source_id(node_1._address, segment_id);
       node_0[source_id] = {
@@ -168,7 +185,7 @@
         source_id = compute_source_id(address, segment_id);
         node[source_id] = {
           _remote_encryption_key: command_data,
-          _local_encryption_key: generate_key()
+          _local_encryption_key: randombytes(KEY_LENGTH)
         };
         node.create_response(address, segment_id, node[source_id]._local_encryption_key);
         node.confirm_incoming_segment_established(address, segment_id);
@@ -223,10 +240,20 @@
       });
     });
     node.on('wrap', function(data){
-      return data.wrapped = data.unwrapped.slice();
+      var address, segment_id, target_address, unwrapped, source_id;
+      address = data.address, segment_id = data.segment_id, target_address = data.target_address, unwrapped = data.unwrapped;
+      source_id = compute_source_id(target_address, segment_id);
+      return wrap(unwrapped, node[source_id]._remote_encryption_key).then(function(wrapped){
+        data.wrapped = wrapped;
+      });
     });
     node.on('unwrap', function(data){
-      return data.unwrapped = data.wrapped.slice();
+      var address, segment_id, target_address, wrapped, source_id;
+      address = data.address, segment_id = data.segment_id, target_address = data.target_address, wrapped = data.wrapped;
+      source_id = compute_source_id(target_address, segment_id);
+      return unwrap(wrapped, node[source_id]._local_encryption_key).then(function(unwrapped){
+        data.unwrapped = unwrapped;
+      });
     });
   }
 }).call(this);

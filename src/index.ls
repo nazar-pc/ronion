@@ -256,11 +256,14 @@ Ronion:: =
 		source_id	= compute_source_id(address, segment_id)
 		if !@_outgoing_established_segments.has(source_id)
 			throw new ReferenceError('There is no such segment established')
-		target_address	= @_outgoing_established_segments.get(source_id).pop()
-		# Drop routing path entirely if no nodes left
-		if !@_outgoing_established_segments.get(source_id).length
-			@_outgoing_established_segments.delete(source_id)
+		nodes_in_routing_path	= @_outgoing_established_segments.get(source_id)
+		target_address			= nodes_in_routing_path[nodes_in_routing_path.length - 1]
 		@_generate_packet_encrypted(address, segment_id, target_address, COMMAND_DESTROY, new Uint8Array).then (packet) !~>
+			# Remove destroyed node address from routing path
+			nodes_in_routing_path.pop()
+			# Drop routing path entirely if no nodes left
+			if !nodes_in_routing_path.length
+				@_outgoing_established_segments.delete(source_id)
 			@fire('send', {address, packet})
 	/**
 	 * Must be called in order to send data to the node in routing path that starts with specified address and segment ID, sends DATA

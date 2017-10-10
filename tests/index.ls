@@ -11,12 +11,13 @@ test		= require('tape')
 
 const KEY_LENGTH	= 32
 const MAC_LENGTH	= 16
-keys_iv				= {}
+encrypt_iv			= {}
+wrap_iv				= {}
 
 # Encryption
 function encrypt (plaintext, key)
-	iv						= randombytes(16)
-	keys_iv[key.join('')]	= iv
+	iv							= randombytes(16)
+	encrypt_iv[key.join('')]	= iv
 
 	cipher		= crypto.createCipheriv('aes-256-gcm', key, iv)
 	ciphertext	= cipher.update(plaintext)
@@ -26,23 +27,42 @@ function encrypt (plaintext, key)
 		..set(ciphertext)
 		..set(mac, ciphertext.length)
 	Promise.resolve(encrypted)
+
 # Decryption
 function decrypt (encrypted, key)
-	iv	= keys_iv[key.join('')]
+	iv	= encrypt_iv[key.join('')]
 
-	decipher		= crypto.createDecipheriv('aes-256-gcm', key, iv)
-	ciphertext		= encrypted.subarray(0, encrypted.length - MAC_LENGTH)
-	mac				= encrypted.subarray(encrypted.length - MAC_LENGTH)
-	decipher.setAuthTag(mac)
-	plaintext		= decipher.update(ciphertext)
 	try
+		decipher		= crypto.createDecipheriv('aes-256-gcm', key, iv)
+		ciphertext		= encrypted.subarray(0, encrypted.length - MAC_LENGTH)
+		mac				= encrypted.subarray(encrypted.length - MAC_LENGTH)
+		decipher.setAuthTag(mac)
+		plaintext		= decipher.update(ciphertext)
 		decipher.final()
 	catch
 		return Promise.reject()
+	delete encrypt_iv[key.join('')]
 	Promise.resolve(plaintext)
-# Fake keys generator
-function generate_key
-	randombytes(KEY_LENGTH)
+
+# Wrapping
+function wrap (plaintext, key)
+	iv						= randombytes(16)
+	wrap_iv[key.join('')]	= iv
+
+	cipher		= crypto.createCipheriv('aes-256-ctr', key, iv)
+	ciphertext	= cipher.update(plaintext)
+	cipher.final()
+	Promise.resolve(ciphertext)
+
+# Unwrapping
+function unwrap (ciphertext, key)
+	iv	= wrap_iv[key.join('')]
+	delete wrap_iv[key.join('')]
+
+	decipher	= crypto.createDecipheriv('aes-256-ctr', key, iv)
+	plaintext	= decipher.update(ciphertext)
+	decipher.final()
+	Promise.resolve(plaintext)
 
 function compute_source_id (address, segment_id)
 	address.join('') + segment_id.join('')
@@ -67,7 +87,7 @@ for let node, source_address in nodes
 			source_id								= compute_source_id(address, segment_id)
 			node[source_id]							=
 				_remote_encryption_key	: command_data
-				_local_encryption_key	: generate_key()
+				_local_encryption_key	: randombytes(KEY_LENGTH)
 			node.create_response(address, segment_id, node[source_id]_local_encryption_key)
 			node.confirm_incoming_segment_established(address, segment_id)
 	)
@@ -104,12 +124,16 @@ for let node, source_address in nodes
 		decrypt(ciphertext, node[source_id]_local_encryption_key).then (data.plaintext) !->
 	)
 	node.on('wrap', (data) ->
-		# TODO: actual unwrapping
-		data.wrapped	= data.unwrapped.slice()
+		{address, segment_id, target_address, unwrapped}	= data
+		source_id											= compute_source_id(target_address, segment_id)
+		# Separate keys should be used, but for tests we reuse the same keys (with different IVs though)
+		wrap(unwrapped, node[source_id]_remote_encryption_key).then (data.wrapped) !->
 	)
 	node.on('unwrap', (data) ->
-		# TODO: actual wrapping
-		data.unwrapped	= data.wrapped.slice()
+		{address, segment_id, target_address, wrapped}	= data
+		source_id										= compute_source_id(target_address, segment_id)
+		# Separate keys should be used, but for tests we reuse the same keys (with different IVs though)
+		unwrap(wrapped, node[source_id]_local_encryption_key).then (data.unwrapped) !->
 	)
 
 test('Ronion', (t) !->
@@ -196,12 +220,12 @@ test('Ronion', (t) !->
 				)
 				node_0.data(node_1._address, segment_id, node_1._address, data_0_to_1)
 			)
-			key					= generate_key()
+			key					= randombytes(KEY_LENGTH)
 			source_id			= compute_source_id(node_2._address, segment_id)
 			node_0[source_id]	= {_local_encryption_key : key}
 			node_0.extend_request(node_1._address, segment_id, node_2._address, key)
 		)
-		key					= generate_key()
+		key					= randombytes(KEY_LENGTH)
 		segment_id			= node_0.create_request(node_1._address, key)
 		source_id			= compute_source_id(node_1._address, segment_id)
 		node_0[source_id]	= {_local_encryption_key : key}

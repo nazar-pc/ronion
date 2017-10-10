@@ -284,16 +284,18 @@
      * @param {Uint8Array}	segment_id	Same segment ID as returned by CREATE_REQUEST
      */,
     destroy: function(address, segment_id){
-      var source_id, target_address, this$ = this;
+      var source_id, nodes_in_routing_path, target_address, this$ = this;
       source_id = compute_source_id(address, segment_id);
       if (!this._outgoing_established_segments.has(source_id)) {
         throw new ReferenceError('There is no such segment established');
       }
-      target_address = this._outgoing_established_segments.get(source_id).pop();
-      if (!this._outgoing_established_segments.get(source_id).length) {
-        this._outgoing_established_segments['delete'](source_id);
-      }
+      nodes_in_routing_path = this._outgoing_established_segments.get(source_id);
+      target_address = nodes_in_routing_path[nodes_in_routing_path.length - 1];
       this._generate_packet_encrypted(address, segment_id, target_address, COMMAND_DESTROY, new Uint8Array).then(function(packet){
+        nodes_in_routing_path.pop();
+        if (!nodes_in_routing_path.length) {
+          this$._outgoing_established_segments['delete'](source_id);
+        }
         this$.fire('send', {
           address: address,
           packet: packet
