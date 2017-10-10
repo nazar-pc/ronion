@@ -4,48 +4,54 @@
  * @copyright Copyright (c) 2017, Nazar Mokrynskyi
  * @license   MIT License, see license.txt
  */
+crypto		= require('crypto')
 lib			= require('..')
-randombytes	= require('crypto').randomBytes
+randombytes	= crypto.randomBytes
 test		= require('tape')
 
-# Fake encryption
-function encrypt (plaintext, [key])
-	mac			= 0
-	ciphertext	= plaintext.map (character) ->
-		mac += character
-		character .^. key
-	mac			= mac % 256
-	encrypted	= new Uint8Array(plaintext.length + 1)
+const KEY_LENGTH	= 32
+const MAC_LENGTH	= 16
+keys_iv				= {}
+
+# Encryption
+function encrypt (plaintext, key)
+	iv						= randombytes(16)
+	keys_iv[key.join('')]	= iv
+
+	cipher		= crypto.createCipheriv('aes-256-gcm', key, iv)
+	ciphertext	= cipher.update(plaintext)
+	cipher.final()
+	mac			= cipher.getAuthTag()
+	encrypted	= new Uint8Array(ciphertext.length + mac.length)
 		..set(ciphertext)
-		..set([mac], ciphertext.length)
+		..set(mac, ciphertext.length)
 	Promise.resolve(encrypted)
-# Fake decryption
-function decrypt (encrypted, [key])
-	mac			= 0
-	plaintext	= encrypted.subarray(0, encrypted.length - 1).map (character) ->
-		character	= character .^. key
-		mac += character
-		character
-	mac			= mac % 256
-	if mac != encrypted[encrypted.length - 1]
-		Promise.reject()
-	else
-		Promise.resolve(plaintext)
+# Decryption
+function decrypt (encrypted, key)
+	iv	= keys_iv[key.join('')]
+
+	decipher		= crypto.createDecipheriv('aes-256-gcm', key, iv)
+	ciphertext		= encrypted.subarray(0, encrypted.length - MAC_LENGTH)
+	mac				= encrypted.subarray(encrypted.length - MAC_LENGTH)
+	decipher.setAuthTag(mac)
+	plaintext		= decipher.update(ciphertext)
+	try
+		decipher.final()
+	catch
+		return Promise.reject()
+	Promise.resolve(plaintext)
 # Fake keys generator
 function generate_key
-	do
-		key	= randombytes(1)
-	while key[0] == 0
-	key
+	randombytes(KEY_LENGTH)
 
 function compute_source_id (address, segment_id)
 	address.join('') + segment_id.join('')
 
 # Address of the node is simply its index in this array
 nodes	= [
-	new lib(1, 512, 1, 1)
-	new lib(1, 512, 1, 1)
-	new lib(1, 512, 1, 1)
+	new lib(1, 512, 1, MAC_LENGTH)
+	new lib(1, 512, 1, MAC_LENGTH)
+	new lib(1, 512, 1, MAC_LENGTH)
 ]
 
 var received_data
@@ -53,10 +59,10 @@ var received_data
 for let node, source_address in nodes
 	node._address	= Uint8Array.of(source_address)
 	node.on('send', ({address, packet}) !->
-		nodes[address].process_packet(node._address, packet)
+		nodes[address[0]].process_packet(node._address, packet)
 	)
 	node.on('create_request', ({address, segment_id, command_data}) !->
-		if command_data.length == 1
+		if command_data.length == KEY_LENGTH
 			node._in_segment_id						= segment_id
 			source_id								= compute_source_id(address, segment_id)
 			node[source_id]							=
@@ -66,13 +72,13 @@ for let node, source_address in nodes
 			node.confirm_incoming_segment_established(address, segment_id)
 	)
 	node.on('create_response', ({address, segment_id, command_data}) !->
-		if command_data.length == 1
+		if command_data.length == KEY_LENGTH
 			source_id								= compute_source_id(address, segment_id)
 			node[source_id]_remote_encryption_key	= command_data
 			node.confirm_outgoing_segment_established(address, segment_id)
 	)
 	node.on('extend_response', ({address, segment_id, command_data}) !->
-		if command_data.length == 1
+		if command_data.length == KEY_LENGTH
 			source_id										= compute_source_id(address, segment_id)
 			target_address									= node._pending_extensions.get(source_id)
 			target_source_id								= compute_source_id(target_address, segment_id)
@@ -108,11 +114,11 @@ for let node, source_address in nodes
 
 test('Ronion', (t) !->
 
-	t.equal(nodes[0].get_max_command_data_length(), 505, 'Max command data length computed correctly')
-
 	node_0	= nodes[0]
 	node_1	= nodes[1]
 	node_2	= nodes[2]
+
+	t.equal(node_0.get_max_command_data_length(), 490, 'Max command data length computed correctly')
 
 	t.test('Create routing path (first segment)' (t) !->
 		t.plan(25)
@@ -122,7 +128,7 @@ test('Ronion', (t) !->
 			t.equal(command_data.join(''), key.join(''), 'Create request works')
 		)
 		node_0.once('create_response', ({command_data}) !->
-			t.equal(command_data.length, 1, 'Create response works')
+			t.equal(command_data.length, KEY_LENGTH, 'Create response works')
 			source_id_0	= compute_source_id(node_0._address, segment_id)
 			source_id_1	= compute_source_id(node_1._address, node_1._in_segment_id)
 			t.equal(node_0[source_id_1]_local_encryption_key.join(''), node_1[source_id_0]_remote_encryption_key.join(''), 'Encryption keys established #1')
@@ -133,7 +139,7 @@ test('Ronion', (t) !->
 				t.equal(command_data.join(''), key.join(''), 'Extend request works and create request was called')
 			)
 			node_0.once('extend_response', ({command_data}) !->
-				t.equal(command_data.length, 1, 'Extend response works')
+				t.equal(command_data.length, KEY_LENGTH, 'Extend response works')
 				source_id_0	= compute_source_id(node_1._address, segment_id)
 				source_id_2	= compute_source_id(node_2._address, node_2._in_segment_id)
 				t.equal(node_0[source_id_2]_local_encryption_key.join(''), node_2[source_id_0]_remote_encryption_key.join(''), 'Encryption keys established #3')
@@ -199,8 +205,6 @@ test('Ronion', (t) !->
 		segment_id			= node_0.create_request(node_1._address, key)
 		source_id			= compute_source_id(node_1._address, segment_id)
 		node_0[source_id]	= {_local_encryption_key : key}
-
-		# TODO: the rest
 	)
 
 
