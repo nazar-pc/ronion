@@ -1,6 +1,6 @@
 # Ronion anonymous routing protocol framework specification
 
-Specification version: 0.3.1
+Specification version: 0.3.2
 
 Author: Nazar Mokrynskyi
 
@@ -136,7 +136,7 @@ Is sent when creating segment of routing path is needed, can be send multiple ti
 
 Request data:
 ```
-[command: 1, 1][segment_creation_request_data_length: 2][segment_creation_request_data: segment_creation_request_data_length][zero_bytes_padding]
+[command: 1, 1][segment_creation_request_data_length: 2][segment_creation_request_data][zero_bytes_padding]
 ```
 
 Request data handling:
@@ -149,7 +149,7 @@ Is sent as an answer to `CREATE_REQUEST`, is sent exactly once in response to ea
 
 Response data:
 ```
-[command: 1, 2][segment_creation_response_data_length: 2][segment_creation_response_data: segment_creation_response_data_length][zero_bytes_padding]
+[command: 1, 2][segment_creation_response_data_length: 2][segment_creation_response_data][zero_bytes_padding]
 ```
 
 Response data handling:
@@ -181,7 +181,7 @@ Request data handling:
 
 `CREATE_REQUEST` request data being sent:
 ```
-[command: 1, 1][segment_creation_request_data_length: 2][segment_creation_request_data: segment_creation_request_data_length][zero_bytes_padding]
+[command: 1, 1][segment_creation_request_data_length: 2][segment_creation_request_data][zero_bytes_padding]
 ```
 
 #### EXTEND_RESPONSE command
