@@ -1,14 +1,14 @@
 # Ronion
 Generic anonymous routing protocol framework agnostic to encryption algorithm and transport layer.
 
-This repository contains both the spec and reference implementation.
+This repository contains high level design overview (design.md), specification for implementors (spec.md) and reference implementation.
 
 WARNING: INSECURE UNTIL PROVEN THE OPPOSITE!!!
 
 This protocol and reference implementation are intended to be secure, but until proper independent audit is conducted you shouldn't consider it to actually be secure and shouldn't use in production applications.
 
 ## Current status
-Specification is not finalized yet, but seems good already.
+Specification and design are not finalized yet, but seem good already.
 
 Implementation API should be near stable and unlikely to change unless major spec changes are needed.
 
@@ -20,4 +20,4 @@ TODO: See tests for now
 ## License
 Implementation: MIT, see license.txt
 
-Specification: public domain
+Specification and design: public domain

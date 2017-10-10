@@ -1,6 +1,6 @@
 # Ronion anonymous routing protocol framework specification
 
-Specification version: 0.3.2
+Specification version: 0.3.3
 
 Author: Nazar Mokrynskyi
 
@@ -10,39 +10,17 @@ License: Ronion anonymous routing protocol framework specification (this documen
 This document is a textual specification of the Ronion anonymous routing protocol framework.
 The goal of this document is to give enough guidance to permit a complete and correct implementation of the protocol.
 
+Refer to the design document if you need a high level overview of this framework.
+
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED",  "MAY", and "OPTIONAL" in this document are to be interpreted as described in IETF [RFC 2119](http://www.ietf.org/rfc/rfc2119.txt).
-
-#### What Ronion is and what isn't
-Ronion's primary goal is to provide a well defined, easy to follow and secure specification for anonymous routing that can be relied upon when building higher level protocols in order to reduce the number of decisions that need to be made.
-
-The protocol framework is deliberately designed in a generic way, so that it would be possible to use it with different cryptographic algorithms, transport layers and nodes selection approaches.
-
-This framework (in contrast to Tor, mix net) doesn't specify how exactly nodes are selected and even what nodes addresses are - those are application layer decisions.
-It only specifies how communication SHOULD happen and provides basic building blocks for higher level protocols.
-In fact, this framework can be used as the foundation for Tor-like routing or mix network implementations.
 
 #### Glossary
 * Initiator: the node that initiates communication
-* Responder: the node with which initiator wants to communicate with
+* Responder: the node with which initiator wants to communicate
 * Routing path: a sequence of nodes that form a path through which initiator and responder are connected and can anonymously send encrypted data
 * Routing path segment: part of routing path between 2 adjacent nodes, on each node routing path segment is identified using routing path segment identifier and address of the node on the other end of the segment
 * Packet: set of bytes to be transferred from one node to another
 * Application: software that uses implementation of this protocol
-
-#### Assumptions
-The only assumption about encryption algorithm used is that authenticated encryption is used (application MUST specify MAC length in bytes).
-
-The only assumption about transport layer is that it delivers data in the same order as the data were sent (think of TCP instead of UDP, no out-of-order delivery).
-
-#### Goals
-The goals of this protocol framework are:
-* anonymizing the connection between initiator and responder so that nodes in routing path don't know who is initiator and who is responder
-* anonymizing the connection between initiator and responder so that responder doesn't know who initiator is and doesn't know its address
-* hiding exact number of intermediate nodes used from any node in routing path including responder as well as limited observer
-* hiding exact size and contents of the transmitted data sent from initiator to responder and backwards from any of the node in routing path as well as global observer
-* allow application to use its own encryption algorithm, transport layer and data structures of the messages
-
-Ronion depends heavily on application's decisions and tries to stay away from enforcing implementation details as much as possible, while still providing easy to follow framework for building secure and anonymous communication.
 
 #### Numbers
 All numbers are unsigned integers in big endian format.
