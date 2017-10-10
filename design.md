@@ -29,11 +29,11 @@ Ronion's primary goal is to provide a well defined, easy to follow and secure pr
 The protocol framework is deliberately designed in a generic way, so that it would be possible to use it with different cryptographic algorithms, transport layers and nodes selection approaches.
 
 This protocol framework (in contrast to Tor, mix net) doesn't specify how exactly nodes are selected and how many nodes SHOULD be in routing path - those are application layer decisions.
-It only specifies how communication SHOULD happen and provides basic building blocks for higher level protocols.
-In fact, this framework can be used as the foundation for Tor-like routing or mix network implementations.
+It only specifies how communication MUST happen and provides basic building blocks for higher level protocols.
 
-This protocol framework also doesn't specify traffic shaping rules like applying custom delays, changing sending order of independent packets and other methods commonly found in mixed networks.
-In fact, this framework can be used as the foundation for mixed network implementation.
+This protocol framework also doesn't specify traffic shaping rules like applying custom delays, changing sending order of independent packets and other methods commonly found in mix networks.
+
+In fact, this framework can be used as the foundation for Tor-like routing or mix network implementations.
 
 ### Assumptions
 The only assumption about encryption algorithm used is that authenticated encryption is used (application MUST specify MAC length in bytes).
