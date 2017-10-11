@@ -5,7 +5,7 @@
  * @license   MIT License, see license.txt
  */
 /*
- * Implements version 0.3.1 of the specification
+ * Implements version 0.3.4 of the specification
  */
 async-eventer	= require('async-eventer')
 
@@ -96,7 +96,7 @@ function compute_source_id (address, segment_id)
 /**
  * @constructor
  *
- * @param {number}	version					0..255
+ * @param {number}	version					Application-specific version 0..255
  * @param {number}	packet_size				Packets will always have exactly this size
  * @param {number}	address_length			Length of the node address
  * @param {number}	mac_length				Length of the MAC that is added to ciphertext during encryption
@@ -359,7 +359,7 @@ Ronion:: =
 						if @_incoming_established_segments.has(source_id)
 							@_incoming_established_segments.delete(source_id)
 							@_del_segments_forwarding_mapping(address, segment_id)
-							@fire('destroy', {address, segment_id, command_data})
+							@fire('destroy', {address, segment_id})
 					case COMMAND_DATA
 						@fire('data', {address, segment_id, command_data})
 			!~>

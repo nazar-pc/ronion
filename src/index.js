@@ -7,7 +7,7 @@
  */
 (function(){
   /*
-   * Implements version 0.3.1 of the specification
+   * Implements version 0.3.4 of the specification
    */
   var asyncEventer, COMMAND_CREATE_REQUEST, COMMAND_CREATE_RESPONSE, COMMAND_EXTEND_REQUEST, COMMAND_EXTEND_RESPONSE, COMMAND_DESTROY, COMMAND_DATA;
   asyncEventer = require('async-eventer');
@@ -99,7 +99,7 @@
   /**
    * @constructor
    *
-   * @param {number}	version					0..255
+   * @param {number}	version					Application-specific version 0..255
    * @param {number}	packet_size				Packets will always have exactly this size
    * @param {number}	address_length			Length of the node address
    * @param {number}	mac_length				Length of the MAC that is added to ciphertext during encryption
@@ -433,8 +433,7 @@
               this$._del_segments_forwarding_mapping(address, segment_id);
               this$.fire('destroy', {
                 address: address,
-                segment_id: segment_id,
-                command_data: command_data
+                segment_id: segment_id
               });
             }
             break;
