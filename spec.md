@@ -1,6 +1,6 @@
 # Ronion anonymous routing protocol framework specification
 
-Specification version: 0.3.3
+Specification version: 0.3.4
 
 Author: Nazar Mokrynskyi
 
@@ -215,17 +215,9 @@ If packets were forwarded through the whole routing path and the last node (eith
 If packet is decrypted successfully, but command is unknown, the packet is silently dropped.
 Undecryptable or packets with non-existing command (just to stop data from moving to the next node) can be used to generate fake activity.
 
-### Security and anonymity considerations for an application developer
-Here is the list of things an application developer MUST consider in order to have secure and anonymous communication:
-* application MUST always use authenticated encryption
-* nodes MUST use separate unique temporary keys and initial data for stream ciphers for each segment and MUST NOT reuse them ever again
-* application on any node MIGHT want to send fake packets, apply custom delays between sending packets and forward packets from independent `[segment_id]` in different order than they have come to the node in order to confuse an external observer
-
 ### Acknowledgements
 This protocol framework is heavily inspired by [Tor](https://www.torproject.org/).
 
-The address was intentionally not defined explicitly so that it can be anything, but the primary idea was to use this with DHT and use public key as both node ID in DHT and address in this protocol framework.
-
 The crypto layer that was kept in mind throughout designing was `IK` handshake pattern from [The Noise Protocol Framework](https://noiseprotocol.org/).
 
-Many thanks to Andrey Khavryuchenko for initial review and suggestions!
+Many thanks to Andrey Khavryuchenko and Ximin Luo for review and valuable suggestions!

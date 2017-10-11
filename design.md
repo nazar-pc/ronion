@@ -1,6 +1,6 @@
 # Ronion anonymous routing protocol framework design
 
-Complements specification version: 0.3.3
+Complements specification version: 0.3.4
 
 Author: Nazar Mokrynskyi
 
@@ -153,3 +153,10 @@ Creating routing path from A through B to C:
 |                                      | < Wrapping segment creation response |                                      |
 | ^ Routing path established           |                                      |                                      |
 ```
+
+### Acknowledgements
+This protocol framework is heavily inspired by [Tor](https://www.torproject.org/).
+
+The crypto layer that was kept in mind throughout designing was `IK` handshake pattern from [The Noise Protocol Framework](https://noiseprotocol.org/).
+
+Many thanks to Andrey Khavryuchenko and Ximin Luo for review and valuable suggestions!
