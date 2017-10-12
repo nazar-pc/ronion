@@ -1,8 +1,15 @@
 {
 	"name"            : "ronion",
-	"description"     : "",
-	"keywords"        : [],
-	"version"         : "0.0.1",
+	"description"     : "Generic anonymous routing protocol framework agnostic to encryption algorithm and transport layer",
+	"keywords"        : [
+		"onion",
+		"routing",
+		"anonymous",
+		"tor",
+		"mix network",
+		"p2p"
+	],
+	"version"         : "0.1.0",
 	"homepage"        : "https://github.com/nazar-pc/ronion",
 	"author"          : {
 		"name"  : "Nazar Mokrynskyi",
@@ -23,18 +30,26 @@
 	"docs"            : "https://github.com/nazar-pc/ronion",
 	"main"            : "src/index.js",
 	"files"           : [
+		"dist",
 		"src"
 	],
 	"scripts"         : {
-		"test"   : "tape tests/**/*.js",
-		"minify" : "gulp minify"
+		"test"  : "tape tests/**/*.js",
+		"build" : "gulp build"
 	},
 	"dependencies"    : {
-		"async-eventer" : "^1.1.0"
+		"async-eventer" : "^1.1.1"
 	},
 	"devDependencies" : {
-		"google-closure-compiler-js" : "^20170910.0.0",
+		"browserify"                 : "^14.4.0",
+		"del"                        : "^3.0.0",
+		"google-closure-compiler-js" : "^20170910.0.1",
 		"gulp"                       : "^3.9.1",
+		"gulp-rename"                : "^1.2.2",
+		"gulp-tap"                   : "^1.0.1",
 		"tape"                       : "^4.7.0"
+	},
+	"jspm"            : {
+		"main" : "dist/ronion.browser.js"
 	}
 }

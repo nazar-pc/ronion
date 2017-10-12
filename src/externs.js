@@ -4,10 +4,12 @@
  * @copyright Copyright (c) 2017, Nazar Mokrynskyi
  * @license   MIT License, see license.txt
  */
+var global = {};
 /**
- * @param {Function} wrapper
+ * @param {*} dependencies
+ * @param {*} [wrapper]
  */
-var define = function (wrapper) {};
+var define = function (dependencies, wrapper) {};
 /**
  * @param {string} module
  */

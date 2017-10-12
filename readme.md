@@ -14,6 +14,11 @@ Implementation API should be near stable and unlikely to change unless major spe
 
 Still considered unstable, so be careful and make sure to report any issues you encounter. Project is covered with tests though to ensure it works as intended (see `tests` directory).
 
+## How to install
+```
+npm install ronion
+```
+
 ## Implementation API
 Below if the list of public interfaces (constructors, methods and events) that are available.
 Tests in `tests` directory can be used as an additional source of usage examples (not necessarily secure though!).
