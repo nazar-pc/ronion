@@ -19,7 +19,7 @@ const COMMAND_DESTROY			= 5
 const COMMAND_DATA				= 6
 
 /**
- * @param {Uint8Array} array
+ * @param {!Uint8Array} array
  *
  * @return {number}
  */
@@ -29,7 +29,7 @@ function uint_array_to_number (array)
 /**
  * @param {number} number
  *
- * @return {Uint8Array}
+ * @return {!Uint8Array}
  */
 function number_to_uint_array (number)
 	lsb	= number % 256
@@ -37,18 +37,18 @@ function number_to_uint_array (number)
 	Uint8Array.of(msb, lsb)
 
 /**
- * @param {Uint8Array} packet
+ * @param {!Uint8Array} packet
  *
- * @return {array} [version: number, segment_id: Uint8Array, packet_data: Uint8Array]
+ * @return {!Array} [version: number, segment_id: Uint8Array, packet_data: Uint8Array]
  */
 function parse_packet (packet)
 	# First byte is version, next 2 bytes are segment_id and the rest are packet data
 	[packet[0], packet.subarray(1, 3), packet.subarray(3)]
 
 /**
- * @param {Uint8Array} packet_data
+ * @param {!Uint8Array} packet_data
  *
- * @return {array} [command: number, command_data: Uint8Array]
+ * @return {!Array} [command: number, command_data: Uint8Array]
  */
 function parse_packet_data (packet_data)
 	# First byte is command, next 2 bytes are command data length as unsigned integer in big endian format
@@ -59,10 +59,10 @@ function parse_packet_data (packet_data)
 /**
  * @param {number}		packet_size
  * @param {number}		version
- * @param {Uint8Array}	segment_id
- * @param {Uint8Array}	packet_data
+ * @param {!Uint8Array}	segment_id
+ * @param {!Uint8Array}	packet_data
  *
- * @return {Uint8Array}
+ * @return {!Uint8Array}
  */
 function generate_packet (packet_size, version, segment_id, packet_data)
 	new Uint8Array(packet_size)
@@ -72,10 +72,10 @@ function generate_packet (packet_size, version, segment_id, packet_data)
 
 /**
  * @param {number}		command
- * @param {Uint8Array}	command_data
+ * @param {!Uint8Array}	command_data
  * @param {number}		max_command_data_length
  *
- * @return {Uint8Array}
+ * @return {!Uint8Array}
  */
 function generate_packet_data (command, command_data, max_command_data_length)
 	# First byte is command, next 2 bytes are command data length as unsigned integer in big endian format, next are command data and the rest are zeroes
@@ -85,8 +85,8 @@ function generate_packet_data (command, command_data, max_command_data_length)
 		..set(command_data, 3)
 
 /**
- * @param {Uint8Array}	address
- * @param {Uint8Array}	segment_id
+ * @param {!Uint8Array}	address
+ * @param {!Uint8Array}	segment_id
  *
  * @return {string}
  */
@@ -95,6 +95,7 @@ function compute_source_id (address, segment_id)
 
 /**
  * @constructor
+ * @extends {Eventer}
  *
  * @param {number}	version					Application-specific version 0..255
  * @param {number}	packet_size				Packets will always have exactly this size
@@ -133,10 +134,10 @@ Ronion:: =
 	/**
 	 * Must be called when new packet appear
 	 *
-	 * @param {Uint8Array}	address	Address (in application-specific format) where packet came from
-	 * @param {Uint8Array}	packet	Packet
+	 * @param {!Uint8Array}	address	Address (in application-specific format) where packet came from
+	 * @param {!Uint8Array}	packet	Packet
 	 */
-	process_packet : (address, packet) !->
+	'process_packet' : (address, packet) !->
 		# Do nothing if packet or its size is incorrect
 		if packet.length != @_packet_size
 			return
@@ -153,30 +154,30 @@ Ronion:: =
 	/**
 	 * Must be called when new segment is established with node that has specified address (after sending CREATE_REQUEST and receiving CREATE_RESPONSE)
 	 *
-	 * @param {Uint8Array}	address
-	 * @param {Uint8Array}	segment_id
+	 * @param {!Uint8Array}	address
+	 * @param {!Uint8Array}	segment_id
 	 */
-	confirm_outgoing_segment_established : (address, segment_id) !->
+	'confirm_outgoing_segment_established' : (address, segment_id) !->
 		source_id	= compute_source_id(address, segment_id)
 		@_outgoing_established_segments.set(source_id, [address])
 		@_unmark_segment_as_pending(address, segment_id)
 	/**
 	 * Must be called when new segment is established with node that has specified address (after receiving CREATE_REQUEST and sending CREATE_RESPONSE)
 	 *
-	 * @param {Uint8Array}	address
-	 * @param {Uint8Array}	segment_id
+	 * @param {!Uint8Array}	address
+	 * @param {!Uint8Array}	segment_id
 	 */
-	confirm_incoming_segment_established : (address, segment_id) !->
+	'confirm_incoming_segment_established' : (address, segment_id) !->
 		source_id	= compute_source_id(address, segment_id)
 		@_incoming_established_segments.add(source_id)
 		@_unmark_segment_as_pending(address, segment_id)
 	/**
 	 * Must be called when new segment is established with node that has specified address
 	 *
-	 * @param {Uint8Array}	address		Node at which to start routing path
-	 * @param {Uint8Array}	segment_id	Same segment ID as in CREATE_REQUEST
+	 * @param {!Uint8Array}	address		Node at which to start routing path
+	 * @param {!Uint8Array}	segment_id	Same segment ID as in CREATE_REQUEST
 	 */
-	confirm_extended_path : (address, segment_id) !->
+	'confirm_extended_path' : (address, segment_id) !->
 		source_id			= compute_source_id(address, segment_id)
 		next_node_address	= @_pending_extensions.get(source_id)
 		@_outgoing_established_segments.get(source_id).push(next_node_address)
@@ -184,14 +185,14 @@ Ronion:: =
 	/**
 	 * Must be called in order to create new routing path that starts with specified address and segment ID, sends CREATE_REQUEST
 	 *
-	 * @param {Uint8Array}	address			Node at which to start routing path
-	 * @param {Uint8Array}	command_data
+	 * @param {!Uint8Array}	address			Node at which to start routing path
+	 * @param {!Uint8Array}	command_data
 	 *
-	 * @return {Uint8Array} segment_id Generated segment ID that can be later used for routing path extension
+	 * @return {!Uint8Array} segment_id Generated segment ID that can be later used for routing path extension
 	 *
 	 * @throws {RangeError}
 	 */
-	create_request : (address, command_data) ->
+	'create_request' : (address, command_data) ->
 		if command_data.length > @get_max_command_data_length()
 			throw new RangeError('Too much command data')
 		segment_id	= @_generate_segment_id(address)
@@ -202,13 +203,13 @@ Ronion:: =
 	/**
 	 * Must be called in order to respond to CREATE_RESPONSE
 	 *
-	 * @param {Uint8Array}	address			Node from which CREATE_REQUEST come from
-	 * @param {Uint8Array}	segment_id		Same segment ID as in CREATE_REQUEST
-	 * @param {Uint8Array}	command_data
+	 * @param {!Uint8Array}	address			Node from which CREATE_REQUEST come from
+	 * @param {!Uint8Array}	segment_id		Same segment ID as in CREATE_REQUEST
+	 * @param {!Uint8Array}	command_data
 	 *
 	 * @throws {RangeError}
 	 */
-	create_response : (address, segment_id, command_data) !->
+	'create_response' : (address, segment_id, command_data) !->
 		if command_data.length > @get_max_command_data_length()
 			throw new RangeError('Too much command data')
 		packet	= @_generate_packet_plaintext(segment_id, COMMAND_CREATE_RESPONSE, command_data)
@@ -216,15 +217,15 @@ Ronion:: =
 	/**
 	 * Must be called in order to extend routing path that starts with specified address and segment ID by one more segment, sends EXTEND_REQUEST
 	 *
-	 * @param {Uint8Array}	address				Node at which routing path has started
-	 * @param {Uint8Array}	segment_id			Same segment ID as returned by CREATE_REQUEST
-	 * @param {Uint8Array}	next_node_address	Node to which routing path will be extended from current last node, will be prepended to `command_data`
-	 * @param {Uint8Array}	command_data		Subtract address length from max command data length, since `next_node_address` will be prepended
+	 * @param {!Uint8Array}	address				Node at which routing path has started
+	 * @param {!Uint8Array}	segment_id			Same segment ID as returned by CREATE_REQUEST
+	 * @param {!Uint8Array}	next_node_address	Node to which routing path will be extended from current last node, will be prepended to `command_data`
+	 * @param {!Uint8Array}	command_data		Subtract address length from max command data length, since `next_node_address` will be prepended
 	 *
 	 * @throws {RangeError}
 	 * @throws {ReferenceError}
 	 */
-	extend_request : (address, segment_id, next_node_address, command_data) !->
+	'extend_request' : (address, segment_id, next_node_address, command_data) !->
 		source_id	= compute_source_id(address, segment_id)
 		if !@_outgoing_established_segments.has(source_id)
 			throw new ReferenceError('There is no such segment established')
@@ -239,9 +240,9 @@ Ronion:: =
 			@fire('send', {address, packet})
 			@_pending_extensions.set(source_id, next_node_address)
 	/**
-	 * @param {Uint8Array}	address
-	 * @param {Uint8Array}	segment_id
-	 * @param {Uint8Array}	command_data
+	 * @param {!Uint8Array}	address
+	 * @param {!Uint8Array}	segment_id
+	 * @param {!Uint8Array}	command_data
 	 */
 	_extend_response : (address, segment_id, command_data) !->
 		@_generate_packet_encrypted(address, segment_id, address, COMMAND_EXTEND_RESPONSE, command_data).then (packet) !~>
@@ -249,16 +250,16 @@ Ronion:: =
 	/**
 	 * Must be called when it is needed to destroy last segment in routing path that starts with specified address and segment ID
 	 *
-	 * @param {Uint8Array}	address		Node at which routing path has started
-	 * @param {Uint8Array}	segment_id	Same segment ID as returned by CREATE_REQUEST
+	 * @param {!Uint8Array}	address		Node at which routing path has started
+	 * @param {!Uint8Array}	segment_id	Same segment ID as returned by CREATE_REQUEST
 	 */
-	destroy : (address, segment_id) !->
+	'destroy' : (address, segment_id) !->
 		source_id	= compute_source_id(address, segment_id)
 		if !@_outgoing_established_segments.has(source_id)
 			throw new ReferenceError('There is no such segment established')
 		nodes_in_routing_path	= @_outgoing_established_segments.get(source_id)
 		target_address			= nodes_in_routing_path[nodes_in_routing_path.length - 1]
-		@_generate_packet_encrypted(address, segment_id, target_address, COMMAND_DESTROY, new Uint8Array).then (packet) !~>
+		@_generate_packet_encrypted(address, segment_id, target_address, COMMAND_DESTROY, new Uint8Array(0)).then (packet) !~>
 			# Remove destroyed node address from routing path
 			nodes_in_routing_path.pop()
 			# Drop routing path entirely if no nodes left
@@ -268,15 +269,15 @@ Ronion:: =
 	/**
 	 * Must be called in order to send data to the node in routing path that starts with specified address and segment ID, sends DATA
 	 *
-	 * @param {Uint8Array}	address			Node at which routing path has started
-	 * @param {Uint8Array}	segment_id		Same segment ID as returned by CREATE_REQUEST
-	 * @param {Uint8Array}	target_address	Node to which data should be sent, in case of sending data back to the initiator is the same as `address`
-	 * @param {Uint8Array}	command_data
+	 * @param {!Uint8Array}	address			Node at which routing path has started
+	 * @param {!Uint8Array}	segment_id		Same segment ID as returned by CREATE_REQUEST
+	 * @param {!Uint8Array}	target_address	Node to which data should be sent, in case of sending data back to the initiator is the same as `address`
+	 * @param {!Uint8Array}	command_data
 	 *
 	 * @throws {RangeError}
 	 * @throws {ReferenceError}
 	 */
-	data : (address, segment_id, target_address, command_data) !->
+	'data' : (address, segment_id, target_address, command_data) !->
 		source_id	= compute_source_id(address, segment_id)
 		if !@_outgoing_established_segments.has(source_id) && !@_incoming_established_segments.has(source_id)
 			throw new ReferenceError('There is no such segment established')
@@ -289,14 +290,14 @@ Ronion:: =
 	 *
 	 * @return {number}
 	 */
-	get_max_command_data_length : ->
+	'get_max_command_data_length' : ->
 		# We use the same length limit both for encrypted and plaintext packets command data, since plaintext can be wrapped into encrypted one
 		# Total packet size length - version - segment ID - command - command_data_length - MAC (of the packet data)
 		@_packet_size - 1 - 2 - 1 - 2 - @_mac_length
 	/**
-	 * @param {Uint8Array}	address
-	 * @param {Uint8Array}	segment_id
-	 * @param {Uint8Array}	packet_data
+	 * @param {!Uint8Array}	address
+	 * @param {!Uint8Array}	segment_id
+	 * @param {!Uint8Array}	packet_data
 	 */
 	_process_packet_data_plaintext : (address, segment_id, packet_data) !->
 		source_id	= compute_source_id(address, segment_id)
@@ -319,9 +320,9 @@ Ronion:: =
 					# in order to drop half-established routing path segment
 					@fire('create_response', {address, segment_id, command_data})
 	/**
-	 * @param {Uint8Array}	address
-	 * @param {Uint8Array}	segment_id
-	 * @param {Uint8Array}	packet_data_encrypted
+	 * @param {!Uint8Array}	address
+	 * @param {!Uint8Array}	segment_id
+	 * @param {!Uint8Array}	packet_data_encrypted
 	 */
 	_process_packet_data_encrypted : (address, segment_id, packet_data_encrypted) !->
 		# Always re-wrap encrypted data at least once
@@ -350,7 +351,7 @@ Ronion:: =
 							if !(e instanceof RangeError)
 								throw e
 							# Send empty CREATE_RESPONSE indicating that it is not possible to extend routing path
-							@create_response(address, segment_id, new Uint8Array)
+							@create_response(address, segment_id, new Uint8Array(0))
 							return
 					case COMMAND_EXTEND_RESPONSE
 						if @_pending_extensions.has(source_id)
@@ -380,16 +381,16 @@ Ronion:: =
 		)
 	/**
 	 * @param {string}		source_id
-	 * @param {Uint8Array}	packet_data_encrypted
+	 * @param {!Uint8Array}	packet_data_encrypted
 	 */
 	_forward_packet_data : (source_id, packet_data_encrypted) !->
 		[address, segment_id]	= @_segments_forwarding_mapping.get(source_id)
 		packet					= generate_packet(@_packet_size, @_version, segment_id, packet_data_encrypted)
 		@fire('send', {address, packet})
 	/**
-	 * @param {Uint8Array} address
+	 * @param {!Uint8Array} address
 	 *
-	 * @return {Uint8Array}
+	 * @return {!Uint8Array}
 	 *
 	 * @throws {RangeError}
 	 */
@@ -401,35 +402,33 @@ Ronion:: =
 				return segment_id
 		throw new RangeError('Out of possible segment IDs')
 	/**
-	 * @param {number}		packet_size
-	 * @param {number}		version
-	 * @param {Uint8Array}	segment_id
+	 * @param {!Uint8Array}	segment_id
 	 * @param {number}		command
-	 * @param {Uint8Array}	command_data
+	 * @param {!Uint8Array}	command_data
 	 *
-	 * @return {Uint8Array}
+	 * @return {!Uint8Array}
 	 */
 	_generate_packet_plaintext : (segment_id, command, command_data) ->
 		packet_data	= generate_packet_data(command, command_data, @get_max_command_data_length())
 		generate_packet(@_packet_size, @_version, segment_id, packet_data)
 	/**
-	 * @param {Uint8Array}	address
-	 * @param {Uint8Array}	segment_id
-	 * @param {Uint8Array}	target_address
+	 * @param {!Uint8Array}	address
+	 * @param {!Uint8Array}	segment_id
+	 * @param {!Uint8Array}	target_address
 	 * @param {number}		command
-	 * @param {Uint8Array}	command_data
+	 * @param {!Uint8Array}	command_data
 	 *
-	 * @return {Promise} Resolves with Uint8Array packet
+	 * @return {!Promise} Resolves with Uint8Array packet
 	 */
 	_generate_packet_encrypted : (address, segment_id, target_address, command, command_data) ->
 		packet_data	= generate_packet_data(command, command_data, @get_max_command_data_length())
 		@_encrypt_and_wrap(address, segment_id, target_address, packet_data).then (packet_data_encrypted) ~>
 			generate_packet(@_packet_size, @_version, segment_id, packet_data_encrypted)
 	/**
-	 * @param {Uint8Array}	address1
-	 * @param {Uint8Array}	segment_id1
-	 * @param {Uint8Array}	address2
-	 * @param {Uint8Array}	segment_id2
+	 * @param {!Uint8Array}	address1
+	 * @param {!Uint8Array}	segment_id1
+	 * @param {!Uint8Array}	address2
+	 * @param {!Uint8Array}	segment_id2
 	 */
 	_add_segments_forwarding_mapping : (address1, segment_id1, address2, segment_id2) !->
 		# Drop any old mappings
@@ -441,8 +440,8 @@ Ronion:: =
 		@_segments_forwarding_mapping.set(source_id1, [address2, segment_id2])
 		@_segments_forwarding_mapping.set(source_id2, [address1, segment_id1])
 	/**
-	 * @param {Uint8Array}	address
-	 * @param {Uint8Array}	segment_id
+	 * @param {!Uint8Array}	address
+	 * @param {!Uint8Array}	segment_id
 	 */
 	_del_segments_forwarding_mapping : (address, segment_id) !->
 		source_id1	= compute_source_id(address, segment_id)
@@ -452,9 +451,9 @@ Ronion:: =
 			@_segments_forwarding_mapping.delete(source_id1)
 			@_segments_forwarding_mapping.delete(source_id2)
 	/**
-	 * @param {Uint8Array}	address
-	 * @param {Uint8Array}	segment_id
-	 * @param {object}		data
+	 * @param {!Uint8Array}	address
+	 * @param {!Uint8Array}	segment_id
+	 * @param {!Object}		[data]
 	 */
 	_mark_segment_as_pending : (address, segment_id, data = {}) !->
 		# Drop any old mark if it happens to exist
@@ -472,8 +471,8 @@ Ronion:: =
 			old_pending_segment_id	= pending_address_segments.shift()
 			@_unmark_segment_as_pending(address, old_pending_segment_id)
 	/**
-	 * @param {Uint8Array}	address
-	 * @param {Uint8Array}	segment_id
+	 * @param {!Uint8Array}	address
+	 * @param {!Uint8Array}	segment_id
 	 */
 	_unmark_segment_as_pending : (address, segment_id) !->
 		source_id	= compute_source_id(address, segment_id)
@@ -489,12 +488,12 @@ Ronion:: =
 				pending_address_segments.splice(i, 1)
 				return
 	/**
-	 * @param {Uint8Array}	address			Node at which routing path has started
-	 * @param {Uint8Array}	segment_id		Same segment ID as returned by CREATE_REQUEST
-	 * @param {Uint8Array}	target_address	Address for which to encrypt (can be the same as address argument or any other node in routing path)
-	 * @param {Uint8Array}	plaintext
+	 * @param {!Uint8Array}	address			Node at which routing path has started
+	 * @param {!Uint8Array}	segment_id		Same segment ID as returned by CREATE_REQUEST
+	 * @param {!Uint8Array}	target_address	Address for which to encrypt (can be the same as address argument or any other node in routing path)
+	 * @param {!Uint8Array}	plaintext
 	 *
-	 * @return {Promise} Will resolve with Uint8Array ciphertext if encrypted successfully
+	 * @return {!Promise} Will resolve with Uint8Array ciphertext if encrypted successfully
 	 */
 	_encrypt_and_wrap : (address, segment_id, target_address, plaintext) ->
 		source_id	= compute_source_id(address, segment_id)
@@ -518,11 +517,11 @@ Ronion:: =
 		promise.catch(->) # Just to avoid unhandled promise rejection
 		promise
 	/**
-	 * @param {Uint8Array}	address		Node at which routing path has started
-	 * @param {Uint8Array}	segment_id	Same segment ID as returned by CREATE_REQUEST
-	 * @param {Uint8Array}	ciphertext
+	 * @param {!Uint8Array}	address		Node at which routing path has started
+	 * @param {!Uint8Array}	segment_id	Same segment ID as returned by CREATE_REQUEST
+	 * @param {!Uint8Array}	ciphertext
 	 *
-	 * @return {Promise} Will resolve with Uint8Array plaintext if decrypted successfully
+	 * @return {!Promise} Will resolve with Uint8Array plaintext if decrypted successfully
 	 */
 	_decrypt_and_unwrap : (address, segment_id, ciphertext) ->
 		source_id	= compute_source_id(address, segment_id)
@@ -553,11 +552,11 @@ Ronion:: =
 		promise.catch(->) # Just to avoid unhandled promise rejection
 		promise
 	/**
-	 * @param {Uint8Array}	source_address
-	 * @param {Uint8Array}	source_segment_id
-	 * @param {Uint8Array}	data
+	 * @param {!Uint8Array}	source_address
+	 * @param {!Uint8Array}	source_segment_id
+	 * @param {!Uint8Array}	data
 	 *
-	 * @return {Promise} Will resolve with Uint8Array re-wrapped encrypted data
+	 * @return {!Promise} Will resolve with Uint8Array re-wrapped encrypted data
 	 */
 	_rewrap : (source_address, source_segment_id, data) ->
 		source_id	= compute_source_id(source_address, source_segment_id)
@@ -568,12 +567,12 @@ Ronion:: =
 			[target_address, target_segment_id]	= @_segments_forwarding_mapping.get(source_id)
 			@_wrap(target_address, target_segment_id, target_address, data)
 	/**
-	 * @param {Uint8Array}	address
-	 * @param {Uint8Array}	segment_id
-	 * @param {Uint8Array}	target_address
-	 * @param {Uint8Array}	unwrapped
+	 * @param {!Uint8Array}	address
+	 * @param {!Uint8Array}	segment_id
+	 * @param {!Uint8Array}	target_address
+	 * @param {!Uint8Array}	unwrapped
 	 *
-	 * @return {Promise} Will resolve with Uint8Array wrapped data
+	 * @return {!Promise} Will resolve with Uint8Array wrapped data
 	 */
 	_wrap : (address, segment_id, target_address, unwrapped) ->
 		data	= {address, segment_id, target_address, unwrapped, wrapped : null}
@@ -585,12 +584,12 @@ Ronion:: =
 		promise.catch(->) # Just to avoid unhandled promise rejection
 		promise
 	/**
-	 * @param {Uint8Array}	address
-	 * @param {Uint8Array}	segment_id
-	 * @param {Uint8Array}	target_address
-	 * @param {Uint8Array}	wrapped
+	 * @param {!Uint8Array}	address
+	 * @param {!Uint8Array}	segment_id
+	 * @param {!Uint8Array}	target_address
+	 * @param {!Uint8Array}	wrapped
 	 *
-	 * @return {Promise} Will resolve with Uint8Array unwrapped data
+	 * @return {!Promise} Will resolve with Uint8Array unwrapped data
 	 */
 	_unwrap : (address, segment_id, target_address, wrapped) ->
 		data	= {address, segment_id, target_address, wrapped, unwrapped : null}
