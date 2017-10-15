@@ -7,7 +7,7 @@
  */
 (function(){
   /*
-   * Implements version 0.3.4 of the specification
+   * Implements version 0.4.0 of the specification
    */
   var asyncEventer, COMMAND_CREATE_REQUEST, COMMAND_CREATE_RESPONSE, COMMAND_EXTEND_REQUEST, COMMAND_EXTEND_RESPONSE, COMMAND_DESTROY, COMMAND_DATA;
   asyncEventer = require('async-eventer');

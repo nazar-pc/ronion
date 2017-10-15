@@ -1,6 +1,6 @@
 # Ronion anonymous routing protocol framework specification
 
-Specification version: 0.3.4
+Specification version: 0.4.0
 
 Author: Nazar Mokrynskyi
 
@@ -31,11 +31,11 @@ Address format is defined by application and MUST have constant length.
 Address is typically either IP:port combination or public key of the node.
 
 #### Re-wrapping
-Re-wrapping a process of non-authenticated encryption or decryption using synchronous stream cipher, which is basically applying bitwise XOR to one bit at a time. Wrapping and unwrapping are exactly the same bitwise XOR operations, so they will be often called re-wrapping for simplicity.
+Re-wrapping a process of non-authenticated encryption or decryption. Wrapping or unwrapping is used depending on direction (from initiator to responder or backwards) and will be often called re-wrapping for simplicity.
 
 When initiator sends encrypted data to the last node in routing path it wraps (encrypts without authentication) encrypted data multiple times and each node in routing path unwraps (decrypts without authentication) it before encrypted data reach responder. When some node sends data to initiator, it will wrap encrypted data, each node in the routing path will also wrap encrypted data and initiator will eventually unwrap data necessary number of times.
 
-Re-wrapping doesn't have any integrity check (non-authenticated) and relies on end-to-end authenticated encryption. The only purpose of re-wrapping is to hide encrypted data from limited observer that controls more than 1 node on the routing path (re-wrapped data will look differently on each segment of the routing path).
+Re-wrapping doesn't have any integrity check (non-authenticated) and relies on end-to-end authenticated encryption. Re-wrapping doesn't affect data length. The only purpose of re-wrapping is to hide encrypted data from limited observer that controls more than 1 node on the routing path (re-wrapped data will look differently on each segment of the routing path).
 
 #### Encryption
 `{}` means data are encrypted (as the result of consuming `CREATE_REQUEST` and `CREATE_RESPONSE` and establishing corresponding encryption keys) and current node is capable of encrypting and/or decrypting it.
@@ -82,27 +82,27 @@ The list of supported commands is given below, unused numbers are reserved for f
 
 ### Routing path construction
 Before routing path construction happens, application layer MUST select:
-* encryption algorithm for end-to-end authenticated encryption
-* stream cipher for re-wrapping
+* authenticated encryption algorithm for end-to-end encryption
+* non-authenticated encryption algorithm for re-wrapping
 * a list of nodes (represented by their addresses) that will together form a routing path
 
 Routing path construction is started by initiator with sending `CREATE_REQUEST` command(s) to the first node in routing path in order to create the first routing path segment and receives `CREATE_RESPONSE` command(s) back.
 
 After last `CREATE_RESPONSE` received by initiator each side should have:
-* A pair of re-wrapping stream ciphers with unique random initial data that will be used for messages re-wrapping
+* A pair of re-wrapping ciphers with unique random initial data that will be used for messages re-wrapping
 * A pair of unique objects for messages encryption and decryption
 
-There will be 2 stream ciphers with their initial data and 2 encryption/decryption objects so that data can be sent by initiator and towards initiator independently (full-duplex).
+There will be 2 re-wrapping ciphers with their initial data and 2 encryption/decryption objects so that data can be sent by initiator and towards initiator independently (full-duplex).
 
 Then initiator sends `EXTEND_REQUEST` command(s) to the first node in order to extend the routing path by one more segment to the second node and receives `EXTEND_RESPONSE` command(s) back.
 Initiator keeps sending `EXTEND_REQUEST` commands to the last node in current routing path until last node in routing path is responder, at which point routing path is ready to send data back and forth.
 
-`EXTEND_REQUEST` essentially encapsulates `CREATE_REQUEST` and `EXTEND_RESPONSE` encapsulates `CREATE_RESPONSE`, so eventually initiator will have unique pairs of stream ciphers for re-wrapping and encryption/decryption objects with each node in routing path.
+`EXTEND_REQUEST` essentially encapsulates `CREATE_REQUEST` and `EXTEND_RESPONSE` encapsulates `CREATE_RESPONSE`, so eventually initiator will have unique pairs of ciphers for re-wrapping and encryption/decryption objects with each node in routing path.
 
 ### Routing path usage
 When routing path is constructed, initiator can send data towards nodes in routing path and other nodes in routing path can send data towards initiator.
 
-After encrypting data, sender applies re-wrapping using stream cipher for specific path direction (remember, we have 2 stream ciphers, one for each direction) and sends data to the next node in routing path.
+After encrypting data, sender applies re-wrapping using cipher for specific path direction (remember, we have 2 re-wrapping ciphers, one for each direction) and sends data to the next node in routing path.
 
 When node receives encrypted data it applies re-wrapping to the data first, then tries to decrypt. If decryption fails - re-wrapped data are sent to the next node in routing path.
 
@@ -208,7 +208,7 @@ Forwarding is happening when node can't decrypt the command after re-wrapping, w
 Also all of the data moving in direction from responder to initiator SHOULD be forwarded without command decryption attempt, since they are always intended for initiator.
 
 Initiator upon receiving the data tries to decrypt data with keys that correspond to each node in routing path until it decrypts data successfully.
-The order in which keys are selected is up to the application or implementation, but starting from the keys of the first node in the routing path and moving to the first node is a good idea, since it simplifies implementation (as unwrapping needs to be done after each decryption trial and this way it is easier to keep consistent state in stream cipher).
+The order in which keys are selected is up to the application or implementation, but starting from the keys of the first node in the routing path and moving to the last node is a good idea, since it simplifies implementation (as unwrapping needs to be done after each decryption trial and this way it is easier to keep consistent state in re-wrapping cipher).
 
 #### Dropping packets
 If packets were forwarded through the whole routing path and the last node (either initiator or responder) still can't decrypt the packet, the packet is silently dropped.
@@ -218,6 +218,6 @@ Undecryptable or packets with non-existing command (just to stop data from movin
 ### Acknowledgements
 This protocol framework is heavily inspired by [Tor](https://www.torproject.org/).
 
-The crypto layer that was kept in mind throughout designing was `IK` handshake pattern from [The Noise Protocol Framework](https://noiseprotocol.org/).
+The crypto layer for end-to-end encryption that was kept in mind throughout designing was `IK` handshake pattern from [The Noise Protocol Framework](https://noiseprotocol.org/).
 
-Many thanks to Andrey Khavryuchenko and Ximin Luo for review and valuable suggestions!
+Many thanks to Andrey Khavryuchenko, Ximin Luo and Jeff Burdges for review and/or valuable suggestions!
