@@ -5,7 +5,7 @@
  * @license   MIT License, see license.txt
  */
 /*
- * Implements version 0.4.0 of the specification
+ * Implements version 0.5.0 of the specification
  */
 async-eventer	= require('async-eventer')
 

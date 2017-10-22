@@ -1,6 +1,6 @@
 # Ronion anonymous routing protocol framework specification
 
-Specification version: 0.4.0
+Specification version: 0.5.0
 
 Author: Nazar Mokrynskyi
 
@@ -123,7 +123,7 @@ Request data handling:
 * responds to the previous node with `CREATE_RESPONSE` command
 
 #### CREATE_RESPONSE
-Is sent as an answer to `CREATE_REQUEST`, is sent exactly once in response to each `CREATE_REQUEST`.
+Is sent as an answer to `CREATE_REQUEST`, is sent in response to each `CREATE_REQUEST`.
 
 Response data:
 ```
@@ -163,7 +163,7 @@ Request data handling:
 ```
 
 #### EXTEND_RESPONSE command
-Is used in order to extend routing path one segment further, effectively wraps `CREATE_RESPONSE` from next node and send it to the previous node, is sent exactly once in response to each `EXTEND_REQUEST`.
+Is used in order to extend routing path one segment further, effectively wraps `CREATE_RESPONSE` from next node and send it to the previous node, is sent in response to each `EXTEND_REQUEST`.
 
 Response data:
 ```
