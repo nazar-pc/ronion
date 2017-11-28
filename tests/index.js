@@ -64,7 +64,7 @@
     return Promise.resolve(plaintext);
   }
   function compute_source_id(address, segment_id){
-    return address.join('') + segment_id.join('');
+    return address.join(',') + segment_id.join(',');
   }
   nodes = [new lib(1, 512, 1, MAC_LENGTH), new lib(1, 512, 1, MAC_LENGTH), new lib(1, 512, 1, MAC_LENGTH)];
   for (i$ = 0, len$ = nodes.length; i$ < len$; ++i$) {

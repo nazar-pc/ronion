@@ -65,7 +65,7 @@ function unwrap (ciphertext, key)
 	Promise.resolve(plaintext)
 
 function compute_source_id (address, segment_id)
-	address.join('') + segment_id.join('')
+	address.join(',') + segment_id.join(',')
 
 # Address of the node is simply its index in this array
 nodes	= [

@@ -92,14 +92,14 @@
       return result_promise;
     }
   };
-  if (typeof define === 'function' && define.amd) {
+  if (typeof define === 'function' && define['amd']) {
     define(function(){
       return Eventer;
     });
   } else if (typeof exports === 'object') {
     module.exports = Eventer;
   } else {
-    this.async_eventer = Eventer;
+    this['async_eventer'] = Eventer;
   }
 }).call(this);
 
@@ -113,7 +113,7 @@
  */
 (function(){
   /*
-   * Implements version 0.3.4 of the specification
+   * Implements version 0.5.0 of the specification
    */
   var asyncEventer, COMMAND_CREATE_REQUEST, COMMAND_CREATE_RESPONSE, COMMAND_EXTEND_REQUEST, COMMAND_EXTEND_RESPONSE, COMMAND_DESTROY, COMMAND_DATA;
   asyncEventer = require('async-eventer');
@@ -200,7 +200,7 @@
    * @return {string}
    */
   function compute_source_id(address, segment_id){
-    return address.join('') + segment_id.join('');
+    return address.join(',') + segment_id.join(',');
   }
   /**
    * @constructor

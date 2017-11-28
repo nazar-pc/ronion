@@ -220,4 +220,4 @@ This protocol framework is heavily inspired by [Tor](https://www.torproject.org/
 
 The crypto layer for end-to-end encryption that was kept in mind throughout designing was `IK` handshake pattern from [The Noise Protocol Framework](https://noiseprotocol.org/).
 
-Many thanks to Andrey Khavryuchenko, Ximin Luo and Jeff Burdges for review and/or valuable suggestions!
+Many thanks to Andriy Khavryuсhenko, Ximin Luo and Jeff Burdges for review and/or valuable suggestions!
