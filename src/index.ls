@@ -172,7 +172,7 @@ Ronion:: =
 		@_incoming_established_segments.add(source_id)
 		@_unmark_segment_as_pending(address, segment_id)
 	/**
-	 * Must be called when new segment is established with node that has specified address
+	 * Must be called when routing path is extended by one more segment
 	 *
 	 * @param {!Uint8Array}	address		Node at which to start routing path
 	 * @param {!Uint8Array}	segment_id	Same segment ID as in CREATE_REQUEST
