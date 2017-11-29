@@ -94,7 +94,7 @@
    * @return {string}
    */
   function compute_source_id(address, segment_id){
-    return address.join(',') + segment_id.join(',');
+    return address.toString() + segment_id.toString();
   }
   /**
    * @constructor

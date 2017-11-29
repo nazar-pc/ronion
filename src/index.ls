@@ -91,7 +91,7 @@ function generate_packet_data (command, command_data, max_command_data_length)
  * @return {string}
  */
 function compute_source_id (address, segment_id)
-	address.join(',') + segment_id.join(',')
+	address.toString() + segment_id.toString()
 
 /**
  * @constructor
