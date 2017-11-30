@@ -1,6 +1,6 @@
 # Ronion anonymous routing protocol framework specification
 
-Specification version: 0.5.0
+Specification version: 0.5.1
 
 Author: Nazar Mokrynskyi
 
@@ -110,7 +110,7 @@ When node receives encrypted data it applies re-wrapping to the data first, then
 These commands are used prior to establishing routing path segments with specified `[segment_id]`, as soon as routing path segment is established plaintext commands MUST NOT be accepted.
 
 #### CREATE_REQUEST
-Is sent when creating segment of routing path is needed, can be send multiple times to the same node if multiple roundtrips are needed.
+Is sent when creating segment of routing path is needed, can be sent multiple times to the same node if multiple roundtrips are needed.
 
 Request data:
 ```
@@ -143,7 +143,7 @@ Each encrypted command request data follows following pattern:
 ```
 
 #### EXTEND_REQUEST command
-Is used in order to extend routing path one segment further, effectively generates `CREATE_REQUEST` to the next node, can be send multiple times to the same node if multiple roundtrips are needed.
+Is used in order to extend routing path one segment further, effectively generates `CREATE_REQUEST` to the next node, can be sent multiple times to the same node if multiple roundtrips are needed.
 
 If `[segment_id]` was previously extended to another node, that link between `[segment_id]` of the previous node and `[segment_id]` of the next node MUST be destroyed and new routing path extension MUST be performed.
 

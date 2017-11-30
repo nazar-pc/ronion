@@ -5,7 +5,7 @@
  * @license   MIT License, see license.txt
  */
 /*
- * Implements version 0.5.0 of the specification
+ * Implements version 0.5.1 of the specification
  */
 async-eventer	= require('async-eventer')
 
@@ -350,8 +350,8 @@ Ronion:: =
 						catch e
 							if !(e instanceof RangeError)
 								throw e
-							# Send empty CREATE_RESPONSE indicating that it is not possible to extend routing path
-							@create_response(address, segment_id, new Uint8Array(0))
+							# Send empty EXTEND_RESPONSE indicating that it is not possible to extend routing path
+							@_extend_response(address, segment_id, new Uint8Array(0))
 							return
 					case COMMAND_EXTEND_RESPONSE
 						if @_pending_extensions.has(source_id)

@@ -7,7 +7,7 @@
  */
 (function(){
   /*
-   * Implements version 0.5.0 of the specification
+   * Implements version 0.5.1 of the specification
    */
   var asyncEventer, COMMAND_CREATE_REQUEST, COMMAND_CREATE_RESPONSE, COMMAND_EXTEND_REQUEST, COMMAND_EXTEND_RESPONSE, COMMAND_DESTROY, COMMAND_DATA;
   asyncEventer = require('async-eventer');
@@ -415,7 +415,7 @@
               if (!(e instanceof RangeError)) {
                 throw e;
               }
-              this$.create_response(address, segment_id, new Uint8Array(0));
+              this$._extend_response(address, segment_id, new Uint8Array(0));
               return;
             }
             break;
