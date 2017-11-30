@@ -113,7 +113,7 @@
  */
 (function(){
   /*
-   * Implements version 0.5.0 of the specification
+   * Implements version 0.5.1 of the specification
    */
   var asyncEventer, COMMAND_CREATE_REQUEST, COMMAND_CREATE_RESPONSE, COMMAND_EXTEND_REQUEST, COMMAND_EXTEND_RESPONSE, COMMAND_DESTROY, COMMAND_DATA;
   asyncEventer = require('async-eventer');
@@ -282,7 +282,7 @@
       this._unmark_segment_as_pending(address, segment_id);
     }
     /**
-     * Must be called when new segment is established with node that has specified address
+     * Must be called when routing path is extended by one more segment
      *
      * @param {!Uint8Array}	address		Node at which to start routing path
      * @param {!Uint8Array}	segment_id	Same segment ID as in CREATE_REQUEST
@@ -493,8 +493,9 @@
           this$._forward_packet_data(source_id, packet_data_encrypted_rewrapped);
           return;
         }
-        this$._decrypt_and_unwrap(address, segment_id, packet_data_encrypted_rewrapped).then(function(packet_data){
-          var ref$, command, command_data, next_node_address, segment_creation_request_data, next_node_segment_id, original_source, forward_to, e;
+        this$._decrypt_and_unwrap(address, segment_id, packet_data_encrypted_rewrapped).then(function(result){
+          var packet_data, ref$, command, command_data, next_node_address, segment_creation_request_data, next_node_segment_id, original_source, forward_to, e;
+          packet_data = result.plaintext;
           ref$ = parse_packet_data(packet_data), command = ref$[0], command_data = ref$[1];
           switch (command) {
           case COMMAND_EXTEND_REQUEST:
@@ -521,7 +522,7 @@
               if (!(e instanceof RangeError)) {
                 throw e;
               }
-              this$.create_response(address, segment_id, new Uint8Array(0));
+              this$._extend_response(address, segment_id, new Uint8Array(0));
               return;
             }
             break;
@@ -548,6 +549,7 @@
             this$.fire('data', {
               address: address,
               segment_id: segment_id,
+              target_address: result.target_address,
               command_data: command_data
             });
           }
@@ -783,7 +785,10 @@
           if (!(plaintext instanceof Uint8Array) || plaintext.length !== ciphertext.length - this$._mac_length) {
             throw new Error('Decryption failed');
           }
-          return plaintext;
+          return {
+            plaintext: plaintext,
+            target_address: data.target_address
+          };
         });
       });
       promise['catch'](function(){});

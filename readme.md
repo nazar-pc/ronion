@@ -163,7 +163,7 @@ Event is fired when `DESTROY` command was received from `address` with segment I
 #### Event: data
 Payload object (all properties are `Uint8Array`):
 ```javascript
-{address, segment_id, command_data}
+{address, segment_id, target_address, command_data}
 ```
 Event is fired when `DATA` command was received from `address` with segment ID `segment_id`. `command_data` contains data being sent to this node.
 

@@ -91,7 +91,8 @@ function generate_packet_data (command, command_data, max_command_data_length)
  * @return {string}
  */
 function compute_source_id (address, segment_id)
-	address.toString() + segment_id.toString()
+	# `join()` is used instead of `toString()` in order to support `Buffer`, which will return binary string on `toString()`
+	address.join(',') + segment_id.join(',')
 
 /**
  * @constructor
@@ -333,7 +334,8 @@ Ronion:: =
 			@_forward_packet_data(source_id, packet_data_encrypted_rewrapped)
 			return
 		@_decrypt_and_unwrap(address, segment_id, packet_data_encrypted_rewrapped).then(
-			(packet_data) !~>
+			(result) !~>
+				packet_data				= result.plaintext
 				[command, command_data]	= parse_packet_data(packet_data)
 				switch command
 					case COMMAND_EXTEND_REQUEST
@@ -362,7 +364,7 @@ Ronion:: =
 							@_del_segments_forwarding_mapping(address, segment_id)
 							@fire('destroy', {address, segment_id})
 					case COMMAND_DATA
-						@fire('data', {address, segment_id, command_data})
+						@fire('data', {address, segment_id, result.target_address, command_data})
 			!~>
 				if @_segments_forwarding_mapping.has(source_id)
 					@_forward_packet_data(source_id, packet_data_encrypted_rewrapped)
@@ -548,7 +550,7 @@ Ronion:: =
 					plaintext	= data.plaintext
 					if !(plaintext instanceof Uint8Array) || plaintext.length != (ciphertext.length - @_mac_length)
 						throw new Error('Decryption failed')
-					plaintext
+					{plaintext, data.target_address}
 		promise.catch(->) # Just to avoid unhandled promise rejection
 		promise
 	/**
