@@ -1,4 +1,4 @@
-# Ronion
+# Ronion [![Travis CI](https://img.shields.io/travis/nazar-pc/ronion/master.svg?label=Travis%20CI)](https://travis-ci.org/nazar-pc/ronion)
 Generic anonymous routing protocol framework agnostic to encryption algorithm and transport layer.
 
 This repository contains high level design overview (design.md), specification for implementors (spec.md) and reference implementation.
