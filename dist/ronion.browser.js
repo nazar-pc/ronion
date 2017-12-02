@@ -56,6 +56,10 @@
       var callback_, this$ = this;
       if (event && callback) {
         callback_ = function(){
+          if (callback_.used) {
+            return;
+          }
+          callback_.used = true;
           this$.off(event, callback_);
           return callback.apply(null, arguments);
         };
