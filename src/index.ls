@@ -510,12 +510,18 @@ Ronion:: =
 			target_addresses	= @_outgoing_established_segments.get(source_id)
 		else
 			target_addresses	= [target_address]
-		target_address_string	= target_address.join('')
-		target_addresses.every (target_address) ~>
+		# Stop wrapping further once we've reached target node
+		target_addresses		= let target_address_string	= target_address.join(',')
+			result	= []
+			for target_address in target_addresses
+				result.push(target_address)
+				if target_address_string == target_address.join(',')
+					break
+			result
+		# Wrap in reverse order - from further node to closer as it will be wrapped in forward order
+		target_addresses.reverse().forEach (target_address) ~>
 			promise	:= promise.then (ciphertext) ~>
 				@_wrap(address, segment_id, target_address, ciphertext)
-			# Stop wrapping further once we've reached target node
-			target_address_string != target_address.join('')
 		promise.catch(->) # Just to avoid unhandled promise rejection
 		promise
 	/**

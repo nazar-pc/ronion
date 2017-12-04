@@ -607,7 +607,7 @@
      * @return {!Promise} Will resolve with Uint8Array ciphertext if encrypted successfully
      */,
     _encrypt_and_wrap: function(address, segment_id, target_address, plaintext){
-      var source_id, data, promise, target_addresses, target_address_string, this$ = this;
+      var source_id, data, promise, target_addresses, this$ = this;
       source_id = compute_source_id(address, segment_id);
       data = {
         address: address,
@@ -629,12 +629,22 @@
       } else {
         target_addresses = [target_address];
       }
-      target_address_string = target_address.join('');
-      target_addresses.every(function(target_address){
-        promise = promise.then(function(ciphertext){
+      target_addresses = (function(target_address_string){
+        var result, i$, ref$, len$, target_address;
+        result = [];
+        for (i$ = 0, len$ = (ref$ = target_addresses).length; i$ < len$; ++i$) {
+          target_address = ref$[i$];
+          result.push(target_address);
+          if (target_address_string === target_address.join(',')) {
+            break;
+          }
+        }
+        return result;
+      }.call(this, target_address.join(',')));
+      target_addresses.reverse().forEach(function(target_address){
+        return promise = promise.then(function(ciphertext){
           return this$._wrap(address, segment_id, target_address, ciphertext);
         });
-        return target_address_string !== target_address.join('');
       });
       promise['catch'](function(){});
       return promise;

@@ -9,7 +9,7 @@
 		"mix network",
 		"p2p"
 	],
-	"version"         : "0.3.1",
+	"version"         : "0.3.2",
 	"homepage"        : "https://github.com/nazar-pc/ronion",
 	"author"          : {
 		"name"  : "Nazar Mokrynskyi",
