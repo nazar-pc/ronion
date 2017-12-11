@@ -28,7 +28,7 @@ Constructor used to create Ronion instance.
 
 Will only process packets with specified version of specified size (will ignore others), expects fixed-size address and MAC length.
 
-* `version` - Application-specific version 0..255
+* `version` - Application-specific version `0..255`
 * `packet_size` - Packets will always have exactly this size
 * `address_length` - Length of the node address
 * `mac_length` - Length of the MAC that is added to ciphertext during encryption
@@ -101,7 +101,7 @@ Send `command_data` data to the `target_address` node on routing path.
 * `address` - Address used in `Ronion.create_request` method
 * `segment_id` - Segment ID returned by `Ronion.create_request` method
 * `target_address` - Address of the node in routing path which should receive data
-* `command` - Command that can be later interpreted by application layer
+* `command` - Command that can be later interpreted by application layer (from range `0..245`)
 * `command_data` - Data being sent
 
 #### Ronion.get_max_command_data_length() : number

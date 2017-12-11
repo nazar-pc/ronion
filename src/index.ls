@@ -273,7 +273,7 @@ Ronion:: =
 	 * @param {!Uint8Array}	address			Node at which routing path has started
 	 * @param {!Uint8Array}	segment_id		Same segment ID as returned by CREATE_REQUEST
 	 * @param {!Uint8Array}	target_address	Node to which data should be sent, in case of sending data back to the initiator is the same as `address`
-	 * @param {number}		command			Command number from range `10..255`
+	 * @param {number}		command			Command number from range `0..245`
 	 * @param {!Uint8Array}	command_data
 	 *
 	 * @throws {RangeError}
