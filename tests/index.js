@@ -6,7 +6,7 @@
  * @license   MIT License, see license.txt
  */
 (function(){
-  var crypto, lib, randombytes, test, KEY_LENGTH, MAC_LENGTH, encrypt_iv, wrap_iv, nodes, received_data, i$, len$;
+  var crypto, lib, randombytes, test, KEY_LENGTH, MAC_LENGTH, encrypt_iv, wrap_iv, nodes, i$, len$;
   crypto = require('crypto');
   lib = require('..');
   randombytes = crypto.randomBytes;
@@ -78,64 +78,51 @@
     node_2 = nodes[2];
     node_3 = nodes[3];
     t.equal(node_0.get_max_command_data_length(), 490, 'Max command data length computed correctly');
-    node_1.once('create_request', function(arg$){
-      var command_data;
-      command_data = arg$.command_data;
+    node_1.once('create_request', function(arg$, arg1$, command_data){
       t.equal(command_data.join(''), key.join(''), 'Create request works');
     });
-    node_0.once('create_response', function(arg$){
-      var command_data, source_id_0, source_id_1, key, source_id;
-      command_data = arg$.command_data;
+    node_0.once('create_response', function(arg$, arg1$, command_data){
+      var source_id_0, source_id_1, key, source_id;
       t.equal(command_data.length, KEY_LENGTH, 'Create response works');
       source_id_0 = compute_source_id(node_0._address, segment_id);
       source_id_1 = compute_source_id(node_1._address, node_1._in_segment_id);
       t.equal(node_0[source_id_1]._local_encryption_key.join(''), node_1[source_id_0]._remote_encryption_key.join(''), 'Encryption keys established #1');
       t.equal(node_1[source_id_0]._local_encryption_key.join(''), node_0[source_id_1]._remote_encryption_key.join(''), 'Encryption keys established #2');
-      node_2.once('create_request', function(arg$){
-        var command_data;
-        command_data = arg$.command_data;
+      node_2.once('create_request', function(arg$, arg1$, command_data){
         t.equal(command_data.join(''), key.join(''), 'Extend request works and create request was called #1');
       });
-      node_0.once('extend_response', function(arg$){
-        var command_data, source_id_0, source_id_2, key, source_id;
-        command_data = arg$.command_data;
+      node_0.once('extend_response', function(arg$, arg1$, command_data){
+        var source_id_0, source_id_2, key, source_id;
         t.equal(command_data.length, KEY_LENGTH, 'Extend response works #1');
         source_id_0 = compute_source_id(node_1._address, segment_id);
         source_id_2 = compute_source_id(node_2._address, node_2._in_segment_id);
         t.equal(node_0[source_id_2]._local_encryption_key.join(''), node_2[source_id_0]._remote_encryption_key.join(''), 'Encryption keys established #3');
         t.equal(node_2[source_id_0]._local_encryption_key.join(''), node_0[source_id_2]._remote_encryption_key.join(''), 'Encryption keys established #4');
-        node_3.once('create_request', function(arg$){
-          var command_data;
-          command_data = arg$.command_data;
+        node_3.once('create_request', function(arg$, arg1$, command_data){
           t.equal(command_data.join(''), key.join(''), 'Extend request works and create request was called #2');
         });
-        node_0.once('extend_response', function(arg$){
-          var command_data, source_id_0, source_id_3, data_0_to_1;
-          command_data = arg$.command_data;
+        node_0.once('extend_response', function(arg$, arg1$, command_data){
+          var source_id_0, source_id_3, data_0_to_1;
           t.equal(command_data.length, KEY_LENGTH, 'Extend response works #2');
           source_id_0 = compute_source_id(node_2._address, segment_id);
           source_id_3 = compute_source_id(node_3._address, node_3._in_segment_id);
           t.equal(node_0[source_id_3]._local_encryption_key.join(''), node_3[source_id_0]._remote_encryption_key.join(''), 'Encryption keys established #5');
           t.equal(node_3[source_id_0]._local_encryption_key.join(''), node_0[source_id_3]._remote_encryption_key.join(''), 'Encryption keys established #6');
           data_0_to_1 = randombytes(30);
-          node_1.once('data', function(arg$){
-            var command_data, data_0_to_3;
-            command_data = arg$.command_data;
+          node_1.once('data', function(arg$, arg1$, arg2$, arg3$, command_data){
+            var data_0_to_3;
             t.equal(command_data.join(''), data_0_to_1.join(''), 'Command data received fine #1');
             data_0_to_3 = randombytes(30);
-            node_3.once('data', function(arg$){
-              var command_data, data_1_to_0;
-              command_data = arg$.command_data;
+            node_3.once('data', function(arg$, arg1$, arg2$, arg3$, command_data){
+              var data_1_to_0;
               t.equal(command_data.join(''), data_0_to_3.join(''), 'Command data received fine #2');
               data_1_to_0 = randombytes(30);
-              node_0.once('data', function(arg$){
-                var command_data, data_2_to_0;
-                command_data = arg$.command_data;
+              node_0.once('data', function(arg$, arg1$, arg2$, arg3$, command_data){
+                var data_2_to_0;
                 t.equal(command_data.join(''), data_1_to_0.join(''), 'Command data received fine #3');
                 data_2_to_0 = randombytes(30);
-                node_0.once('data', function(arg$){
-                  var command_data, source_id;
-                  command_data = arg$.command_data;
+                node_0.once('data', function(arg$, arg1$, arg2$, arg3$, command_data){
+                  var source_id;
                   t.equal(command_data.join(''), data_2_to_0.join(''), 'Command data received fine #4');
                   source_id = compute_source_id(node_1._address, segment_id);
                   t.equal(node_0._outgoing_established_segments.size, 1, 'Correct number of routes before destroying');
@@ -198,14 +185,11 @@
   });
   function fn$(source_address, node){
     node._address = Uint8Array.of(source_address);
-    node.on('send', function(arg$){
-      var address, packet;
-      address = arg$.address, packet = arg$.packet;
+    node.on('send', function(address, packet){
       nodes[address[0]].process_packet(node._address, packet);
     });
-    node.on('create_request', function(arg$){
-      var address, segment_id, command_data, source_id;
-      address = arg$.address, segment_id = arg$.segment_id, command_data = arg$.command_data;
+    node.on('create_request', function(address, segment_id, command_data){
+      var source_id;
       if (command_data.length === KEY_LENGTH) {
         node._in_segment_id = segment_id;
         source_id = compute_source_id(address, segment_id);
@@ -217,18 +201,16 @@
         node.confirm_incoming_segment_established(address, segment_id);
       }
     });
-    node.on('create_response', function(arg$){
-      var address, segment_id, command_data, source_id;
-      address = arg$.address, segment_id = arg$.segment_id, command_data = arg$.command_data;
+    node.on('create_response', function(address, segment_id, command_data){
+      var source_id;
       if (command_data.length === KEY_LENGTH) {
         source_id = compute_source_id(address, segment_id);
         node[source_id]._remote_encryption_key = command_data;
         node.confirm_outgoing_segment_established(address, segment_id);
       }
     });
-    node.on('extend_response', function(arg$){
-      var address, segment_id, command_data, source_id, target_address, target_source_id;
-      address = arg$.address, segment_id = arg$.segment_id, command_data = arg$.command_data;
+    node.on('extend_response', function(address, segment_id, command_data){
+      var source_id, target_address, target_source_id;
       if (command_data.length === KEY_LENGTH) {
         source_id = compute_source_id(address, segment_id);
         target_address = node._pending_extensions.get(source_id);
@@ -237,17 +219,11 @@
         node.confirm_extended_path(address, segment_id);
       }
     });
-    node.on('destroy', function(arg$){
-      var address, segment_id, source_id;
-      address = arg$.address, segment_id = arg$.segment_id;
+    node.on('destroy', function(address, segment_id){
+      var source_id;
       source_id = compute_source_id(address, segment_id);
       delete node[source_id]._remote_encryption_key;
       delete node[source_id]._local_encryption_key;
-    });
-    node.on('data', function(arg$){
-      var address, segment_id, command_data;
-      address = arg$.address, segment_id = arg$.segment_id, command_data = arg$.command_data;
-      received_data = command_data;
     });
     node.on('encrypt', function(data){
       var address, segment_id, target_address, plaintext, source_id;

@@ -117,56 +117,44 @@ Register one-time event handler (just `on()` + `off()` under the hood).
 Unregister event handler.
 
 #### Event: send
-Payload object (all properties are `Uint8Array`):
-```javascript
-{address, packet}
-```
+Payload consists of two `Uint8Array` arguments: `address` and `packet`.
+
 Event is fired when `packet` needs to be sent to `address` node.
 
 `false` or `Promise.reject()` can be returned from event handler in order to indicate non-fatal failure.
 
 #### Event: create_request
-Payload object (all properties are `Uint8Array`):
-```javascript
-{address, segment_id, command_data}
-```
+Payload consists of three `Uint8Array` arguments: `address`, `segment_id` and `command_data`.
+
 Event is fired when `CREATE_REQUEST` command was received from `address` with segment ID `segment_id`. `command_data` contains the data that were specified during `Ronion.create_request` method call on `address`.
 
 `false` or `Promise.reject()` can be returned from event handler in order to indicate non-fatal failure.
 
 #### Event: create_response
-Payload object (all properties are `Uint8Array`):
-```javascript
-{address, segment_id, command_data}
-```
+Payload consists of three `Uint8Array` arguments: `address`, `segment_id` and `command_data`.
+
 Event is fired when `CREATE_RESPONSE` command was received from `address` with segment ID `segment_id`. `command_data` contains the data that were specified during `Ronion.create_response` method call on `address`.
 
 `false` or `Promise.reject()` can be returned from event handler in order to indicate non-fatal failure.
 
 #### Event: extend_response
-Payload object (all properties are `Uint8Array`):
-```javascript
-{address, segment_id, command_data}
-```
+Payload consists of three `Uint8Array` arguments: `address`, `segment_id` and `command_data`.
+
 Event is fired when `EXTEND_RESPONSE` command was received from `address` with segment ID `segment_id` as an answer to `Ronion.extend_request` method call. `command_data` contains the data that were specified by the node `next_node_address` from `Ronion.extend_request` method call.
 
 `false` or `Promise.reject()` can be returned from event handler in order to indicate non-fatal failure.
 
 #### Event: destroy
-Payload object (all properties are `Uint8Array`):
-```javascript
-{address, segment_id}
-```
+Payload consists of two `Uint8Array` arguments: `address` and `segment_id`.
+
 Event is fired when `DESTROY` command was received from `address` with segment ID `segment_id`.
 
 `false` or `Promise.reject()` can be returned from event handler in order to indicate non-fatal failure.
 
 #### Event: data
-Payload object (all properties are `Uint8Array`):
-```javascript
-{address, segment_id, target_address, command, command_data}
-```
-Event is fired when `DATA` command was received from `address` with segment ID `segment_id`. `command_data` contains data being sent to this node.
+Payload consists of five arguments, all of which except `command` are `Uint8Array`: `address`, `segment_id`, `target_address`, `command` and `command_data`.
+
+Event is fired when `DATA` command was received from `address` with segment ID `segment_id`. `command` is application-defined command and `command_data` contains data being sent to this node. `target_address` shows where data came from (useful on initiator side).
 
 `false` or `Promise.reject()` can be returned from event handler in order to indicate non-fatal failure.
 

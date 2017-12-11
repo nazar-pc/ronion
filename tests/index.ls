@@ -75,14 +75,12 @@ nodes	= [
 	new lib(1, 512, 1, MAC_LENGTH)
 ]
 
-var received_data
-
 for let node, source_address in nodes
 	node._address	= Uint8Array.of(source_address)
-	node.on('send', ({address, packet}) !->
+	node.on('send', (address, packet) !->
 		nodes[address[0]].process_packet(node._address, packet)
 	)
-	node.on('create_request', ({address, segment_id, command_data}) !->
+	node.on('create_request', (address, segment_id, command_data) !->
 		if command_data.length == KEY_LENGTH
 			node._in_segment_id						= segment_id
 			source_id								= compute_source_id(address, segment_id)
@@ -92,13 +90,13 @@ for let node, source_address in nodes
 			node.create_response(address, segment_id, node[source_id]_local_encryption_key)
 			node.confirm_incoming_segment_established(address, segment_id)
 	)
-	node.on('create_response', ({address, segment_id, command_data}) !->
+	node.on('create_response', (address, segment_id, command_data) !->
 		if command_data.length == KEY_LENGTH
 			source_id								= compute_source_id(address, segment_id)
 			node[source_id]_remote_encryption_key	= command_data
 			node.confirm_outgoing_segment_established(address, segment_id)
 	)
-	node.on('extend_response', ({address, segment_id, command_data}) !->
+	node.on('extend_response', (address, segment_id, command_data) !->
 		if command_data.length == KEY_LENGTH
 			source_id										= compute_source_id(address, segment_id)
 			target_address									= node._pending_extensions.get(source_id)
@@ -106,13 +104,10 @@ for let node, source_address in nodes
 			node[target_source_id]_remote_encryption_key	= command_data
 			node.confirm_extended_path(address, segment_id)
 	)
-	node.on('destroy', ({address, segment_id}) !->
+	node.on('destroy', (address, segment_id) !->
 		source_id	= compute_source_id(address, segment_id)
 		delete node[source_id]_remote_encryption_key
 		delete node[source_id]_local_encryption_key
-	)
-	node.on('data', ({address, segment_id, command_data}) !->
-		received_data	:= command_data
 	)
 	node.on('encrypt', (data) ->
 		{address, segment_id, target_address, plaintext}	= data
@@ -148,10 +143,10 @@ test('Ronion', (t) !->
 	t.equal(node_0.get_max_command_data_length(), 490, 'Max command data length computed correctly')
 
 	# Establish first segment
-	node_1.once('create_request', ({command_data}) !->
+	node_1.once('create_request', (, , command_data) !->
 		t.equal(command_data.join(''), key.join(''), 'Create request works')
 	)
-	node_0.once('create_response', ({command_data}) !->
+	node_0.once('create_response', (, , command_data) !->
 		t.equal(command_data.length, KEY_LENGTH, 'Create response works')
 		source_id_0	= compute_source_id(node_0._address, segment_id)
 		source_id_1	= compute_source_id(node_1._address, node_1._in_segment_id)
@@ -159,10 +154,10 @@ test('Ronion', (t) !->
 		t.equal(node_1[source_id_0]_local_encryption_key.join(''), node_0[source_id_1]_remote_encryption_key.join(''), 'Encryption keys established #2')
 
 		# Extend routing path by one more segment
-		node_2.once('create_request', ({command_data}) !->
+		node_2.once('create_request', (, , command_data) !->
 			t.equal(command_data.join(''), key.join(''), 'Extend request works and create request was called #1')
 		)
-		node_0.once('extend_response', ({command_data}) !->
+		node_0.once('extend_response', (, , command_data) !->
 			t.equal(command_data.length, KEY_LENGTH, 'Extend response works #1')
 			source_id_0	= compute_source_id(node_1._address, segment_id)
 			source_id_2	= compute_source_id(node_2._address, node_2._in_segment_id)
@@ -170,10 +165,10 @@ test('Ronion', (t) !->
 			t.equal(node_2[source_id_0]_local_encryption_key.join(''), node_0[source_id_2]_remote_encryption_key.join(''), 'Encryption keys established #4')
 
 			# Extend routing path by one more segment
-			node_3.once('create_request', ({command_data}) !->
+			node_3.once('create_request', (, , command_data) !->
 				t.equal(command_data.join(''), key.join(''), 'Extend request works and create request was called #2')
 			)
-			node_0.once('extend_response', ({command_data}) !->
+			node_0.once('extend_response', (, , command_data) !->
 				t.equal(command_data.length, KEY_LENGTH, 'Extend response works #2')
 				source_id_0	= compute_source_id(node_2._address, segment_id)
 				source_id_3	= compute_source_id(node_3._address, node_3._in_segment_id)
@@ -182,22 +177,22 @@ test('Ronion', (t) !->
 
 				# Try sending data initiator to the first node in routing path
 				data_0_to_1	= randombytes(30)
-				node_1.once('data', ({command_data}) !->
+				node_1.once('data', (, , , , command_data) !->
 					t.equal(command_data.join(''), data_0_to_1.join(''), 'Command data received fine #1')
 
 					# Try sending data initiator to the third (and last) node in routing path
 					data_0_to_3	= randombytes(30)
-					node_3.once('data', ({command_data}) !->
+					node_3.once('data', (, , , , command_data) !->
 						t.equal(command_data.join(''), data_0_to_3.join(''), 'Command data received fine #2')
 
 						# Try sending data from the first node in routing path to initiator
 						data_1_to_0	= randombytes(30)
-						node_0.once('data', ({command_data}) !->
+						node_0.once('data', (, , , , command_data) !->
 							t.equal(command_data.join(''), data_1_to_0.join(''), 'Command data received fine #3')
 
 							# Try sending data from the second node in routing path to initiator
 							data_2_to_0	= randombytes(30)
-							node_0.once('data', ({command_data}) !->
+							node_0.once('data', (, , , , command_data) !->
 								t.equal(command_data.join(''), data_2_to_0.join(''), 'Command data received fine #4')
 
 								source_id	= compute_source_id(node_1._address, segment_id)

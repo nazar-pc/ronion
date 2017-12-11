@@ -117,17 +117,17 @@
  */
 (function(){
   /*
-   * Implements version 0.5.1 of the specification
+   * Implements version 0.6.0 of the specification
    */
-  var asyncEventer, COMMAND_CREATE_REQUEST, COMMAND_CREATE_RESPONSE, COMMAND_EXTEND_REQUEST, COMMAND_EXTEND_RESPONSE, COMMAND_DESTROY, COMMAND_DATA;
+  var asyncEventer, COMMAND_CREATE_REQUEST, COMMAND_CREATE_RESPONSE, COMMAND_EXTEND_REQUEST, COMMAND_EXTEND_RESPONSE, COMMAND_DESTROY, CUSTOM_COMMANDS_OFFSET;
   asyncEventer = require('async-eventer');
   module.exports = Ronion;
-  COMMAND_CREATE_REQUEST = 1;
-  COMMAND_CREATE_RESPONSE = 2;
-  COMMAND_EXTEND_REQUEST = 3;
-  COMMAND_EXTEND_RESPONSE = 4;
-  COMMAND_DESTROY = 5;
-  COMMAND_DATA = 6;
+  COMMAND_CREATE_REQUEST = 0;
+  COMMAND_CREATE_RESPONSE = 1;
+  COMMAND_EXTEND_REQUEST = 2;
+  COMMAND_EXTEND_RESPONSE = 3;
+  COMMAND_DESTROY = 4;
+  CUSTOM_COMMANDS_OFFSET = 10;
   /**
    * @param {!Uint8Array} array
    *
@@ -315,10 +315,7 @@
       }
       segment_id = this._generate_segment_id(address);
       packet = this._generate_packet_plaintext(segment_id, COMMAND_CREATE_REQUEST, command_data);
-      this.fire('send', {
-        address: address,
-        packet: packet
-      });
+      this.fire('send', address, packet);
       this._mark_segment_as_pending(address, segment_id);
       return segment_id;
     }
@@ -337,10 +334,7 @@
         throw new RangeError('Too much command data');
       }
       packet = this._generate_packet_plaintext(segment_id, COMMAND_CREATE_RESPONSE, command_data);
-      this.fire('send', {
-        address: address,
-        packet: packet
-      });
+      this.fire('send', address, packet);
     }
     /**
      * Must be called in order to extend routing path that starts with specified address and segment ID by one more segment, sends EXTEND_REQUEST
@@ -367,10 +361,7 @@
       x$.set(next_node_address);
       x$.set(command_data, next_node_address.length);
       this._generate_packet_encrypted(address, segment_id, target_address, COMMAND_EXTEND_REQUEST, command_data_full).then(function(packet){
-        this$.fire('send', {
-          address: address,
-          packet: packet
-        });
+        this$.fire('send', address, packet);
         this$._pending_extensions.set(source_id, next_node_address);
       });
     }
@@ -382,10 +373,7 @@
     _extend_response: function(address, segment_id, command_data){
       var this$ = this;
       this._generate_packet_encrypted(address, segment_id, address, COMMAND_EXTEND_RESPONSE, command_data).then(function(packet){
-        this$.fire('send', {
-          address: address,
-          packet: packet
-        });
+        this$.fire('send', address, packet);
       });
     }
     /**
@@ -407,10 +395,7 @@
         if (!nodes_in_routing_path.length) {
           this$._outgoing_established_segments['delete'](source_id);
         }
-        this$.fire('send', {
-          address: address,
-          packet: packet
-        });
+        this$.fire('send', address, packet);
       });
     }
     /**
@@ -419,12 +404,13 @@
      * @param {!Uint8Array}	address			Node at which routing path has started
      * @param {!Uint8Array}	segment_id		Same segment ID as returned by CREATE_REQUEST
      * @param {!Uint8Array}	target_address	Node to which data should be sent, in case of sending data back to the initiator is the same as `address`
+     * @param {number}		command			Command number from range `10..255`
      * @param {!Uint8Array}	command_data
      *
      * @throws {RangeError}
      * @throws {ReferenceError}
      */,
-    'data': function(address, segment_id, target_address, command_data){
+    'data': function(address, segment_id, target_address, command, command_data){
       var source_id, this$ = this;
       source_id = compute_source_id(address, segment_id);
       if (!this._outgoing_established_segments.has(source_id) && !this._incoming_established_segments.has(source_id)) {
@@ -433,11 +419,8 @@
       if (command_data.length > this.get_max_command_data_length()) {
         throw new RangeError('Too much command data');
       }
-      this._generate_packet_encrypted(address, segment_id, target_address, COMMAND_DATA, command_data).then(function(packet){
-        this$.fire('send', {
-          address: address,
-          packet: packet
-        });
+      this._generate_packet_encrypted(address, segment_id, target_address, command + CUSTOM_COMMANDS_OFFSET, command_data).then(function(packet){
+        this$.fire('send', address, packet);
       });
     }
     /**
@@ -460,11 +443,7 @@
       switch (command) {
       case COMMAND_CREATE_REQUEST:
         this._mark_segment_as_pending(address, segment_id);
-        this.fire('create_request', {
-          address: address,
-          segment_id: segment_id,
-          command_data: command_data
-        });
+        this.fire('create_request', address, segment_id, command_data);
         break;
       case COMMAND_CREATE_RESPONSE:
         if (!this._pending_segments.has(source_id)) {
@@ -475,11 +454,7 @@
           original_source = pending_segment_data.original_source;
           this._extend_response(original_source.address, original_source.segment_id, command_data);
         } else {
-          this.fire('create_response', {
-            address: address,
-            segment_id: segment_id,
-            command_data: command_data
-          });
+          this.fire('create_response', address, segment_id, command_data);
         }
       }
     }
@@ -499,7 +474,7 @@
         }
         this$._decrypt_and_unwrap(address, segment_id, packet_data_encrypted_rewrapped).then(function(result){
           var packet_data, ref$, command, command_data, next_node_address, segment_creation_request_data, next_node_segment_id, original_source, forward_to, e;
-          packet_data = result.plaintext;
+          packet_data = result['plaintext'];
           ref$ = parse_packet_data(packet_data), command = ref$[0], command_data = ref$[1];
           switch (command) {
           case COMMAND_EXTEND_REQUEST:
@@ -511,10 +486,7 @@
                 address: address,
                 segment_id: segment_id
               };
-              forward_to = {
-                next_node_address: next_node_address,
-                next_node_segment_id: next_node_segment_id
-              };
+              forward_to = [next_node_address, next_node_segment_id];
               this$._mark_segment_as_pending(address, segment_id, {
                 forward_to: forward_to
               });
@@ -532,30 +504,22 @@
             break;
           case COMMAND_EXTEND_RESPONSE:
             if (this$._pending_extensions.has(source_id)) {
-              this$.fire('extend_response', {
-                address: address,
-                segment_id: segment_id,
-                command_data: command_data
-              });
+              this$.fire('extend_response', address, segment_id, command_data);
             }
             break;
           case COMMAND_DESTROY:
             if (this$._incoming_established_segments.has(source_id)) {
               this$._incoming_established_segments['delete'](source_id);
               this$._del_segments_forwarding_mapping(address, segment_id);
-              this$.fire('destroy', {
-                address: address,
-                segment_id: segment_id
-              });
+              this$.fire('destroy', address, segment_id);
             }
             break;
-          case COMMAND_DATA:
-            this$.fire('data', {
-              address: address,
-              segment_id: segment_id,
-              target_address: result.target_address,
-              command_data: command_data
-            });
+          default:
+            if (command < CUSTOM_COMMANDS_OFFSET) {
+              return;
+            }
+            command -= CUSTOM_COMMANDS_OFFSET;
+            this$.fire('data', address, segment_id, result['target_address'], command, command_data);
           }
         }, function(){
           var pending_segment_data, ref$, next_node_address, next_node_segment_id;
@@ -564,7 +528,7 @@
           } else if (this$._pending_segments.has(source_id)) {
             pending_segment_data = this$._pending_segments.get(source_id);
             if (pending_segment_data.forward_to) {
-              ref$ = pending_segment_data.forward_to, next_node_address = ref$.next_node_address, next_node_segment_id = ref$.next_node_segment_id;
+              ref$ = pending_segment_data.forward_to, next_node_address = ref$[0], next_node_segment_id = ref$[1];
               this$._unmark_segment_as_pending(address, segment_id);
               this$._unmark_segment_as_pending(next_node_address, next_node_segment_id);
               this$._add_segments_forwarding_mapping(address, segment_id, next_node_address, next_node_segment_id);
@@ -582,10 +546,7 @@
       var ref$, address, segment_id, packet;
       ref$ = this._segments_forwarding_mapping.get(source_id), address = ref$[0], segment_id = ref$[1];
       packet = generate_packet(this._packet_size, this._version, segment_id, packet_data_encrypted);
-      this.fire('send', {
-        address: address,
-        packet: packet
-      });
+      this.fire('send', address, packet);
     }
     /**
      * @param {!Uint8Array} address
@@ -720,15 +681,15 @@
       var source_id, data, promise, target_addresses, this$ = this;
       source_id = compute_source_id(address, segment_id);
       data = {
-        address: address,
-        segment_id: segment_id,
-        target_address: target_address,
-        plaintext: plaintext,
-        ciphertext: null
+        'address': address,
+        'segment_id': segment_id,
+        'target_address': target_address,
+        'plaintext': plaintext,
+        'ciphertext': null
       };
       promise = this.fire('encrypt', data).then(function(){
         var ciphertext;
-        ciphertext = data.ciphertext;
+        ciphertext = data['ciphertext'];
         if (!(ciphertext instanceof Uint8Array) || ciphertext.length !== plaintext.length + this$._mac_length) {
           throw new Error('Encryption failed');
         }
@@ -776,18 +737,18 @@
       }
       promise = Promise.reject();
       data = {
-        address: address,
-        segment_id: segment_id,
-        target_addresses: null,
-        ciphertext: ciphertext,
-        plaintext: null
+        'address': address,
+        'segment_id': segment_id,
+        'target_address': null,
+        'ciphertext': ciphertext,
+        'plaintext': null
       };
       target_addresses.forEach(function(target_address, i){
         promise = promise['catch'](function(){
-          data.target_address = target_address;
+          data['target_address'] = target_address;
           if (i > 0) {
-            return this$._unwrap(address, segment_id, target_address, data.ciphertext).then(function(ciphertext){
-              data.ciphertext = ciphertext;
+            return this$._unwrap(address, segment_id, target_address, data['ciphertext']).then(function(arg$){
+              data['ciphertext'] = arg$;
               return this$.fire('decrypt', data);
             });
           } else {
@@ -795,14 +756,11 @@
           }
         }).then(function(){
           var plaintext;
-          plaintext = data.plaintext;
+          plaintext = data['plaintext'];
           if (!(plaintext instanceof Uint8Array) || plaintext.length !== ciphertext.length - this$._mac_length) {
             throw new Error('Decryption failed');
           }
-          return {
-            plaintext: plaintext,
-            target_address: data.target_address
-          };
+          return data;
         });
       });
       promise['catch'](function(){});
@@ -836,15 +794,15 @@
     _wrap: function(address, segment_id, target_address, unwrapped){
       var data, promise, this$ = this;
       data = {
-        address: address,
-        segment_id: segment_id,
-        target_address: target_address,
-        unwrapped: unwrapped,
-        wrapped: null
+        'address': address,
+        'segment_id': segment_id,
+        'target_address': target_address,
+        'unwrapped': unwrapped,
+        'wrapped': null
       };
       promise = this.fire('wrap', data).then(function(){
         var wrapped;
-        wrapped = data.wrapped;
+        wrapped = data['wrapped'];
         if (!(wrapped instanceof Uint8Array) || wrapped.length !== unwrapped.length) {
           throw new Error('Re-wrapping failed');
         }
@@ -864,15 +822,15 @@
     _unwrap: function(address, segment_id, target_address, wrapped){
       var data, promise, this$ = this;
       data = {
-        address: address,
-        segment_id: segment_id,
-        target_address: target_address,
-        wrapped: wrapped,
-        unwrapped: null
+        'address': address,
+        'segment_id': segment_id,
+        'target_address': target_address,
+        'wrapped': wrapped,
+        'unwrapped': null
       };
       promise = this.fire('unwrap', data).then(function(){
         var unwrapped;
-        unwrapped = data.unwrapped;
+        unwrapped = data['unwrapped'];
         if (!(unwrapped instanceof Uint8Array) || unwrapped.length !== wrapped.length) {
           throw new Error('Re-wrapping failed');
         }
