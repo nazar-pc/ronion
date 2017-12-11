@@ -7,17 +7,17 @@
  */
 (function(){
   /*
-   * Implements version 0.5.1 of the specification
+   * Implements version 0.6.0 of the specification
    */
-  var asyncEventer, COMMAND_CREATE_REQUEST, COMMAND_CREATE_RESPONSE, COMMAND_EXTEND_REQUEST, COMMAND_EXTEND_RESPONSE, COMMAND_DESTROY, COMMAND_DATA;
+  var asyncEventer, COMMAND_CREATE_REQUEST, COMMAND_CREATE_RESPONSE, COMMAND_EXTEND_REQUEST, COMMAND_EXTEND_RESPONSE, COMMAND_DESTROY, CUSTOM_COMMANDS_OFFSET;
   asyncEventer = require('async-eventer');
   module.exports = Ronion;
-  COMMAND_CREATE_REQUEST = 1;
-  COMMAND_CREATE_RESPONSE = 2;
-  COMMAND_EXTEND_REQUEST = 3;
-  COMMAND_EXTEND_RESPONSE = 4;
-  COMMAND_DESTROY = 5;
-  COMMAND_DATA = 6;
+  COMMAND_CREATE_REQUEST = 0;
+  COMMAND_CREATE_RESPONSE = 1;
+  COMMAND_EXTEND_REQUEST = 2;
+  COMMAND_EXTEND_RESPONSE = 3;
+  COMMAND_DESTROY = 4;
+  CUSTOM_COMMANDS_OFFSET = 10;
   /**
    * @param {!Uint8Array} array
    *
@@ -309,12 +309,13 @@
      * @param {!Uint8Array}	address			Node at which routing path has started
      * @param {!Uint8Array}	segment_id		Same segment ID as returned by CREATE_REQUEST
      * @param {!Uint8Array}	target_address	Node to which data should be sent, in case of sending data back to the initiator is the same as `address`
+     * @param {number}		command			Command number from range `10..255`
      * @param {!Uint8Array}	command_data
      *
      * @throws {RangeError}
      * @throws {ReferenceError}
      */,
-    'data': function(address, segment_id, target_address, command_data){
+    'data': function(address, segment_id, target_address, command, command_data){
       var source_id, this$ = this;
       source_id = compute_source_id(address, segment_id);
       if (!this._outgoing_established_segments.has(source_id) && !this._incoming_established_segments.has(source_id)) {
@@ -323,7 +324,7 @@
       if (command_data.length > this.get_max_command_data_length()) {
         throw new RangeError('Too much command data');
       }
-      this._generate_packet_encrypted(address, segment_id, target_address, COMMAND_DATA, command_data).then(function(packet){
+      this._generate_packet_encrypted(address, segment_id, target_address, command + CUSTOM_COMMANDS_OFFSET, command_data).then(function(packet){
         this$.fire('send', {
           address: address,
           packet: packet
@@ -439,11 +440,16 @@
               });
             }
             break;
-          case COMMAND_DATA:
+          default:
+            if (command < CUSTOM_COMMANDS_OFFSET) {
+              return;
+            }
+            command -= CUSTOM_COMMANDS_OFFSET;
             this$.fire('data', {
               address: address,
               segment_id: segment_id,
               target_address: result.target_address,
+              command: command,
               command_data: command_data
             });
           }

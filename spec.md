@@ -1,6 +1,6 @@
 # Ronion anonymous routing protocol framework specification
 
-Specification version: 0.5.1
+Specification version: 0.6.0
 
 Author: Nazar Mokrynskyi
 
@@ -68,17 +68,18 @@ Is added at the end of the command data when needed (so that all packets always 
 #### Commands
 Commands explain what node MUST do with the packet it has received, supported commands are listed below.
 
-Each command is represented by number from the range `1..255`.
-The list of supported commands is given below, unused numbers are reserved for future versions of the specification:
+Each command is represented by number from the range `0..255`.
+The list of supported commands is given below:
 
 | Command name    | Numeric value |
 |-----------------|---------------|
-| CREATE_REQUEST  | 1             |
-| CREATE_RESPONSE | 2             |
-| EXTEND_REQUEST  | 3             |
-| EXTEND_RESPONSE | 4             |
-| DESTROY         | 5             |
-| DATA            | 6             |
+| CREATE_REQUEST  | 0             |
+| CREATE_RESPONSE | 1             |
+| EXTEND_REQUEST  | 2             |
+| EXTEND_RESPONSE | 3             |
+| DESTROY         | 4             |
+
+Numbers `5..9` are reserved for future versions of the specification, numbers `10..255` can be defined by application for its purposes.
 
 ### Routing path construction
 Before routing path construction happens, application layer MUST select:
@@ -187,18 +188,19 @@ No response is needed for this command, can be sent to nodes if unsure whether n
 
 After dropping the segment of the routing path, the last node left in the routing path can be used to again extend routing path to another node.
 
-#### DATA command
+#### Data commands
+Data commands can have any number from range of `10..255` and should be interpreted by application layer.
 Is used to actually transfer useful data between applications on different nodes.
 
-`DATA` command doesn't differentiate request from response, it just send data, application layer SHOULD also take care of delivery confirmations if necessary, since this is not done by protocol either.
+Data commands don't differentiate request from response, application layer SHOULD also take care of delivery confirmations if necessary, since this is not done by protocol either.
 
-`DATA` command can be sent by:
+Data commands can be sent by:
 * initiator towards any node in the routing path, including responder
 * any node in the routing path, including responder, towards initiator
 
 Request data:
 ```
-{[command: 1, 6][data_length: 2][data][zero_bytes_padding]}
+{[command: 1][data_length: 2][data][zero_bytes_padding]}
 ```
 
 #### Data forwarding
@@ -218,6 +220,6 @@ Undecryptable or packets with non-existing command (just to stop data from movin
 ### Acknowledgements
 This protocol framework is heavily inspired by [Tor](https://www.torproject.org/).
 
-The crypto layer for end-to-end encryption that was kept in mind throughout designing was `IK` handshake pattern from [The Noise Protocol Framework](https://noiseprotocol.org/).
+The crypto layer for end-to-end encryption that was kept in mind throughout designing was `NK` handshake pattern from [The Noise Protocol Framework](https://noiseprotocol.org/).
 
 Many thanks to Andriy Khavryuсhenko, Ximin Luo and Jeff Burdges for review and/or valuable suggestions!

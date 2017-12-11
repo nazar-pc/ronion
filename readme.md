@@ -43,7 +43,7 @@ Processes incoming packet.
 #### Ronion.create_request(address : Uint8Array, command_data : Uint8Array) : Uint8Array
 Generates packet with `CREATE_REQUEST` command in order to create the first segment in routing path.
 
-This method can be called multiple times, in case of Noise IK handshake `command_data` will contain handshake message.
+This method can be called multiple times, in case of Noise NK handshake `command_data` will contain handshake message.
 
 * `address` - Address of the first node in the routing path
 * `command_data` - Data that are needed to be exchanged with `address` node in order to establish a segment
@@ -74,7 +74,7 @@ Confirms that the segment of routing path with `address` was established after r
 #### Ronion.extend_request(address : Uint8Array, segment_id : Uint8Array, next_node_address : Uint8Array, command_data : Uint8Array)
 Extends routing path by one more segment to `next_node_address` (generates packet with `EXTEND_REQUEST` command to the last node in routing path).
 
-This method can be called multiple times, in case of Noise IK handshake `command_data` will contain handshake message.
+This method can be called multiple times, in case of Noise NK handshake `command_data` will contain handshake message.
 
 * `address` - Address used in `Ronion.create_request` method
 * `segment_id` - Segment ID returned by `Ronion.create_request` method
@@ -95,12 +95,13 @@ As soon as the first segment in routing path is destroyed, routing path itself i
 * `address` - Address used in `Ronion.create_request` method
 * `segment_id` - Segment ID returned by `Ronion.create_request` method
 
-#### Ronion.data(address : Uint8Array, segment_id : Uint8Array, target_address : Uint8Array, command_data : Uint8Array)
+#### Ronion.data(address : Uint8Array, segment_id : Uint8Array, target_address : Uint8Array, command : number, command_data : Uint8Array)
 Send `command_data` data to the `target_address` node on routing path.
 
 * `address` - Address used in `Ronion.create_request` method
 * `segment_id` - Segment ID returned by `Ronion.create_request` method
 * `target_address` - Address of the node in routing path which should receive data
+* `command` - Command that can be later interpreted by application layer
 * `command_data` - Data being sent
 
 #### Ronion.get_max_command_data_length() : number
@@ -163,7 +164,7 @@ Event is fired when `DESTROY` command was received from `address` with segment I
 #### Event: data
 Payload object (all properties are `Uint8Array`):
 ```javascript
-{address, segment_id, target_address, command_data}
+{address, segment_id, target_address, command, command_data}
 ```
 Event is fired when `DATA` command was received from `address` with segment ID `segment_id`. `command_data` contains data being sent to this node.
 

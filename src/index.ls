@@ -5,18 +5,18 @@
  * @license   MIT License, see license.txt
  */
 /*
- * Implements version 0.5.1 of the specification
+ * Implements version 0.6.0 of the specification
  */
 async-eventer	= require('async-eventer')
 
 module.exports = Ronion
 
-const COMMAND_CREATE_REQUEST	= 1
-const COMMAND_CREATE_RESPONSE	= 2
-const COMMAND_EXTEND_REQUEST	= 3
-const COMMAND_EXTEND_RESPONSE	= 4
-const COMMAND_DESTROY			= 5
-const COMMAND_DATA				= 6
+const COMMAND_CREATE_REQUEST	= 0
+const COMMAND_CREATE_RESPONSE	= 1
+const COMMAND_EXTEND_REQUEST	= 2
+const COMMAND_EXTEND_RESPONSE	= 3
+const COMMAND_DESTROY			= 4
+const CUSTOM_COMMANDS_OFFSET	= 10 # 5..9 are also reserved for future use, everything above is available for the user
 
 /**
  * @param {!Uint8Array} array
@@ -273,18 +273,19 @@ Ronion:: =
 	 * @param {!Uint8Array}	address			Node at which routing path has started
 	 * @param {!Uint8Array}	segment_id		Same segment ID as returned by CREATE_REQUEST
 	 * @param {!Uint8Array}	target_address	Node to which data should be sent, in case of sending data back to the initiator is the same as `address`
+	 * @param {number}		command			Command number from range `10..255`
 	 * @param {!Uint8Array}	command_data
 	 *
 	 * @throws {RangeError}
 	 * @throws {ReferenceError}
 	 */
-	'data' : (address, segment_id, target_address, command_data) !->
+	'data' : (address, segment_id, target_address, command, command_data) !->
 		source_id	= compute_source_id(address, segment_id)
 		if !@_outgoing_established_segments.has(source_id) && !@_incoming_established_segments.has(source_id)
 			throw new ReferenceError('There is no such segment established')
 		if command_data.length > @get_max_command_data_length()
 			throw new RangeError('Too much command data')
-		@_generate_packet_encrypted(address, segment_id, target_address, COMMAND_DATA, command_data).then (packet) !~>
+		@_generate_packet_encrypted(address, segment_id, target_address, command + CUSTOM_COMMANDS_OFFSET, command_data).then (packet) !~>
 			@fire('send', {address, packet})
 	/**
 	 * Convenient method for knowing how much command data can be sent in one packet
@@ -363,8 +364,11 @@ Ronion:: =
 							@_incoming_established_segments.delete(source_id)
 							@_del_segments_forwarding_mapping(address, segment_id)
 							@fire('destroy', {address, segment_id})
-					case COMMAND_DATA
-						@fire('data', {address, segment_id, result.target_address, command_data})
+					else
+						if command < CUSTOM_COMMANDS_OFFSET
+							return
+						command	-= CUSTOM_COMMANDS_OFFSET
+						@fire('data', {address, segment_id, result.target_address, command, command_data})
 			!~>
 				if @_segments_forwarding_mapping.has(source_id)
 					@_forward_packet_data(source_id, packet_data_encrypted_rewrapped)
