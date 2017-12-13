@@ -117,16 +117,15 @@
  */
 (function(){
   /*
-   * Implements version 0.6.0 of the specification
+   * Implements version 0.7.0 of the specification
    */
-  var asyncEventer, COMMAND_CREATE_REQUEST, COMMAND_CREATE_RESPONSE, COMMAND_EXTEND_REQUEST, COMMAND_EXTEND_RESPONSE, COMMAND_DESTROY, CUSTOM_COMMANDS_OFFSET;
+  var asyncEventer, COMMAND_CREATE_REQUEST, COMMAND_CREATE_RESPONSE, COMMAND_EXTEND_REQUEST, COMMAND_EXTEND_RESPONSE, CUSTOM_COMMANDS_OFFSET;
   asyncEventer = require('async-eventer');
   module.exports = Ronion;
   COMMAND_CREATE_REQUEST = 0;
   COMMAND_CREATE_RESPONSE = 1;
   COMMAND_EXTEND_REQUEST = 2;
   COMMAND_EXTEND_RESPONSE = 3;
-  COMMAND_DESTROY = 4;
   CUSTOM_COMMANDS_OFFSET = 10;
   /**
    * @param {!Uint8Array} array
@@ -254,6 +253,7 @@
       if (version !== this._version) {
         return;
       }
+      this.fire('activity', address, segment_id);
       source_id = compute_source_id(address, segment_id);
       if (this._outgoing_established_segments.has(source_id) || this._incoming_established_segments.has(source_id) || this._segments_forwarding_mapping.has(source_id)) {
         this._process_packet_data_encrypted(address, segment_id, packet_data);
@@ -315,7 +315,7 @@
       }
       segment_id = this._generate_segment_id(address);
       packet = this._generate_packet_plaintext(segment_id, COMMAND_CREATE_REQUEST, command_data);
-      this.fire('send', address, packet);
+      this._send(address, segment_id, packet);
       this._mark_segment_as_pending(address, segment_id);
       return segment_id;
     }
@@ -334,7 +334,7 @@
         throw new RangeError('Too much command data');
       }
       packet = this._generate_packet_plaintext(segment_id, COMMAND_CREATE_RESPONSE, command_data);
-      this.fire('send', address, packet);
+      this._send(address, segment_id, packet);
     }
     /**
      * Must be called in order to extend routing path that starts with specified address and segment ID by one more segment, sends EXTEND_REQUEST
@@ -361,7 +361,7 @@
       x$.set(next_node_address);
       x$.set(command_data, next_node_address.length);
       this._generate_packet_encrypted(address, segment_id, target_address, COMMAND_EXTEND_REQUEST, command_data_full).then(function(packet){
-        this$.fire('send', address, packet);
+        this$._send(address, segment_id, packet);
         this$._pending_extensions.set(source_id, next_node_address);
       });
     }
@@ -373,30 +373,29 @@
     _extend_response: function(address, segment_id, command_data){
       var this$ = this;
       this._generate_packet_encrypted(address, segment_id, address, COMMAND_EXTEND_RESPONSE, command_data).then(function(packet){
-        this$.fire('send', address, packet);
+        this$._send(address, segment_id, packet);
       });
     }
     /**
-     * Must be called when it is needed to destroy last segment in routing path that starts with specified address and segment ID
+     * Removes any mapping that uses specified address and segment ID, considers connection to be destroyed
      *
      * @param {!Uint8Array}	address		Node at which routing path has started
      * @param {!Uint8Array}	segment_id	Same segment ID as returned by CREATE_REQUEST
      */,
     'destroy': function(address, segment_id){
-      var source_id, nodes_in_routing_path, target_address, this$ = this;
+      var source_id, ref$, address2, segment_id2;
       source_id = compute_source_id(address, segment_id);
-      if (!this._outgoing_established_segments.has(source_id)) {
-        throw new ReferenceError('There is no such segment established');
+      this._outgoing_established_segments['delete'](source_id);
+      this._incoming_established_segments['delete'](source_id);
+      this._pending_extensions['delete'](source_id);
+      this._unmark_segment_as_pending(address, segment_id);
+      if (this._segments_forwarding_mapping.has(source_id)) {
+        ref$ = this._segments_forwarding_mapping.get(source_id), address2 = ref$[0], segment_id2 = ref$[1];
+        this._del_segments_forwarding_mapping(address, segment_id);
+        this['destroy'](address2, segment_id2);
+      } else {
+        this._del_segments_forwarding_mapping(address, segment_id);
       }
-      nodes_in_routing_path = this._outgoing_established_segments.get(source_id);
-      target_address = nodes_in_routing_path[nodes_in_routing_path.length - 1];
-      this._generate_packet_encrypted(address, segment_id, target_address, COMMAND_DESTROY, new Uint8Array(0)).then(function(packet){
-        nodes_in_routing_path.pop();
-        if (!nodes_in_routing_path.length) {
-          this$._outgoing_established_segments['delete'](source_id);
-        }
-        this$.fire('send', address, packet);
-      });
     }
     /**
      * Must be called in order to send data to the node in routing path that starts with specified address and segment ID, sends DATA
@@ -404,7 +403,7 @@
      * @param {!Uint8Array}	address			Node at which routing path has started
      * @param {!Uint8Array}	segment_id		Same segment ID as returned by CREATE_REQUEST
      * @param {!Uint8Array}	target_address	Node to which data should be sent, in case of sending data back to the initiator is the same as `address`
-     * @param {number}		command			Command number from range `10..255`
+     * @param {number}		command			Command number from range `0..245`
      * @param {!Uint8Array}	command_data
      *
      * @throws {RangeError}
@@ -420,7 +419,7 @@
         throw new RangeError('Too much command data');
       }
       this._generate_packet_encrypted(address, segment_id, target_address, command + CUSTOM_COMMANDS_OFFSET, command_data).then(function(packet){
-        this$.fire('send', address, packet);
+        this$._send(address, segment_id, packet);
       });
     }
     /**
@@ -430,6 +429,10 @@
      */,
     'get_max_command_data_length': function(){
       return this._packet_size - 1 - 2 - 1 - 2 - this._mac_length;
+    },
+    _send: function(address, segment_id, packet){
+      this.fire('activity', address, segment_id);
+      return this.fire('send', address, packet);
     }
     /**
      * @param {!Uint8Array}	address
@@ -507,13 +510,6 @@
               this$.fire('extend_response', address, segment_id, command_data);
             }
             break;
-          case COMMAND_DESTROY:
-            if (this$._incoming_established_segments.has(source_id)) {
-              this$._incoming_established_segments['delete'](source_id);
-              this$._del_segments_forwarding_mapping(address, segment_id);
-              this$.fire('destroy', address, segment_id);
-            }
-            break;
           default:
             if (command < CUSTOM_COMMANDS_OFFSET) {
               return;
@@ -531,8 +527,9 @@
               ref$ = pending_segment_data.forward_to, next_node_address = ref$[0], next_node_segment_id = ref$[1];
               this$._unmark_segment_as_pending(address, segment_id);
               this$._unmark_segment_as_pending(next_node_address, next_node_segment_id);
-              this$._add_segments_forwarding_mapping(address, segment_id, next_node_address, next_node_segment_id);
-              this$._forward_packet_data(source_id, packet_data_encrypted_rewrapped);
+              if (this$._add_segments_forwarding_mapping(address, segment_id, next_node_address, next_node_segment_id)) {
+                this$._forward_packet_data(source_id, packet_data_encrypted_rewrapped);
+              }
             }
           }
         });
@@ -546,7 +543,7 @@
       var ref$, address, segment_id, packet;
       ref$ = this._segments_forwarding_mapping.get(source_id), address = ref$[0], segment_id = ref$[1];
       packet = generate_packet(this._packet_size, this._version, segment_id, packet_data_encrypted);
-      this.fire('send', address, packet);
+      this._send(address, segment_id, packet);
     }
     /**
      * @param {!Uint8Array} address
@@ -603,12 +600,14 @@
      */,
     _add_segments_forwarding_mapping: function(address1, segment_id1, address2, segment_id2){
       var source_id1, source_id2;
-      this._del_segments_forwarding_mapping(address1, segment_id1);
-      this._del_segments_forwarding_mapping(address2, segment_id2);
       source_id1 = compute_source_id(address1, segment_id1);
       source_id2 = compute_source_id(address2, segment_id2);
+      if (this._segments_forwarding_mapping.has(source_id1) || this._segments_forwarding_mapping.has(source_id2)) {
+        return false;
+      }
       this._segments_forwarding_mapping.set(source_id1, [address2, segment_id2]);
       this._segments_forwarding_mapping.set(source_id2, [address1, segment_id1]);
+      return true;
     }
     /**
      * @param {!Uint8Array}	address
@@ -667,6 +666,9 @@
           pending_address_segments.splice(i, 1);
           return;
         }
+      }
+      if (!pending_address_segments.length) {
+        this._pending_address_segments['delete'](address_string);
       }
     }
     /**

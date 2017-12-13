@@ -1,6 +1,6 @@
 # Ronion anonymous routing protocol framework specification
 
-Specification version: 0.6.0
+Specification version: 0.7.0
 
 Author: Nazar Mokrynskyi
 
@@ -77,7 +77,6 @@ The list of supported commands is given below:
 | CREATE_RESPONSE | 1             |
 | EXTEND_REQUEST  | 2             |
 | EXTEND_RESPONSE | 3             |
-| DESTROY         | 4             |
 
 Numbers `5..9` are reserved for future versions of the specification, numbers `10..255` can be defined by application for its purposes.
 
@@ -146,7 +145,7 @@ Each encrypted command request data follows following pattern:
 #### EXTEND_REQUEST command
 Is used in order to extend routing path one segment further, effectively generates `CREATE_REQUEST` to the next node, can be sent multiple times to the same node if multiple roundtrips are needed.
 
-If `[segment_id]` was previously extended to another node, that link between `[segment_id]` of the previous node and `[segment_id]` of the next node MUST be destroyed and new routing path extension MUST be performed.
+If `[segment_id]` was previously extended to another node, further extension MUST be ignored.
 
 Request data:
 ```
@@ -175,18 +174,6 @@ Where `[segment_creation_response_data_length]` and `[segment_creation_response_
 
 Response data handling:
 * if `[segment_creation_response_data_length]` has value `0`, it means that routing path creation has failed (can happen if node can't extend the routing path, for instance, when node with specified address doesn't exist)
-
-#### DESTROY command
-Is used in order to destroy certain segment of the routing path. This command MUST only be sent by initiator and only to the last node in the routing path.
-
-Request data:
-```
-{[command: 1, 5][length: 2, 0][zero_bytes_padding]}
-```
-
-No response is needed for this command, can be sent to nodes if unsure whether node is still alive and will actually receive the message.
-
-After dropping the segment of the routing path, the last node left in the routing path can be used to again extend routing path to another node.
 
 #### Data commands
 Data commands can have any number from range of `10..255` and should be interpreted by application layer.

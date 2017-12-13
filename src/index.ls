@@ -5,7 +5,7 @@
  * @license   MIT License, see license.txt
  */
 /*
- * Implements version 0.6.0 of the specification
+ * Implements version 0.7.0 of the specification
  */
 async-eventer	= require('async-eventer')
 
@@ -15,7 +15,6 @@ const COMMAND_CREATE_REQUEST	= 0
 const COMMAND_CREATE_RESPONSE	= 1
 const COMMAND_EXTEND_REQUEST	= 2
 const COMMAND_EXTEND_RESPONSE	= 3
-const COMMAND_DESTROY			= 4
 const CUSTOM_COMMANDS_OFFSET	= 10 # 5..9 are also reserved for future use, everything above is available for the user
 
 /**
@@ -146,6 +145,7 @@ Ronion:: =
 		# Do nothing the version is unsupported
 		if version != @_version
 			return
+		@fire('activity', address, segment_id)
 		# If segment is not established then we don't use encryption yet
 		source_id	= compute_source_id(address, segment_id)
 		if @_outgoing_established_segments.has(source_id) || @_incoming_established_segments.has(source_id) || @_segments_forwarding_mapping.has(source_id)
@@ -198,7 +198,7 @@ Ronion:: =
 			throw new RangeError('Too much command data')
 		segment_id	= @_generate_segment_id(address)
 		packet		= @_generate_packet_plaintext(segment_id, COMMAND_CREATE_REQUEST, command_data)
-		@fire('send', address, packet)
+		@_send(address, segment_id, packet)
 		@_mark_segment_as_pending(address, segment_id)
 		segment_id
 	/**
@@ -214,7 +214,7 @@ Ronion:: =
 		if command_data.length > @get_max_command_data_length()
 			throw new RangeError('Too much command data')
 		packet	= @_generate_packet_plaintext(segment_id, COMMAND_CREATE_RESPONSE, command_data)
-		@fire('send', address, packet)
+		@_send(address, segment_id, packet)
 	/**
 	 * Must be called in order to extend routing path that starts with specified address and segment ID by one more segment, sends EXTEND_REQUEST
 	 *
@@ -238,7 +238,7 @@ Ronion:: =
 			..set(next_node_address)
 			..set(command_data, next_node_address.length)
 		@_generate_packet_encrypted(address, segment_id, target_address, COMMAND_EXTEND_REQUEST, command_data_full).then (packet) !~>
-			@fire('send', address, packet)
+			@_send(address, segment_id, packet)
 			@_pending_extensions.set(source_id, next_node_address)
 	/**
 	 * @param {!Uint8Array}	address
@@ -247,26 +247,25 @@ Ronion:: =
 	 */
 	_extend_response : (address, segment_id, command_data) !->
 		@_generate_packet_encrypted(address, segment_id, address, COMMAND_EXTEND_RESPONSE, command_data).then (packet) !~>
-			@fire('send', address, packet)
+			@_send(address, segment_id, packet)
 	/**
-	 * Must be called when it is needed to destroy last segment in routing path that starts with specified address and segment ID
+	 * Removes any mapping that uses specified address and segment ID, considers connection to be destroyed
 	 *
 	 * @param {!Uint8Array}	address		Node at which routing path has started
 	 * @param {!Uint8Array}	segment_id	Same segment ID as returned by CREATE_REQUEST
 	 */
 	'destroy' : (address, segment_id) !->
 		source_id	= compute_source_id(address, segment_id)
-		if !@_outgoing_established_segments.has(source_id)
-			throw new ReferenceError('There is no such segment established')
-		nodes_in_routing_path	= @_outgoing_established_segments.get(source_id)
-		target_address			= nodes_in_routing_path[nodes_in_routing_path.length - 1]
-		@_generate_packet_encrypted(address, segment_id, target_address, COMMAND_DESTROY, new Uint8Array(0)).then (packet) !~>
-			# Remove destroyed node address from routing path
-			nodes_in_routing_path.pop()
-			# Drop routing path entirely if no nodes left
-			if !nodes_in_routing_path.length
-				@_outgoing_established_segments.delete(source_id)
-			@fire('send', address, packet)
+		@_outgoing_established_segments.delete(source_id)
+		@_incoming_established_segments.delete(source_id)
+		@_pending_extensions.delete(source_id)
+		@_unmark_segment_as_pending(address, segment_id)
+		if @_segments_forwarding_mapping.has(source_id)
+			[address2, segment_id2]	= @_segments_forwarding_mapping.get(source_id)
+			@_del_segments_forwarding_mapping(address, segment_id)
+			@'destroy'(address2, segment_id2)
+		else
+			@_del_segments_forwarding_mapping(address, segment_id)
 	/**
 	 * Must be called in order to send data to the node in routing path that starts with specified address and segment ID, sends DATA
 	 *
@@ -286,7 +285,7 @@ Ronion:: =
 		if command_data.length > @get_max_command_data_length()
 			throw new RangeError('Too much command data')
 		@_generate_packet_encrypted(address, segment_id, target_address, command + CUSTOM_COMMANDS_OFFSET, command_data).then (packet) !~>
-			@fire('send', address, packet)
+			@_send(address, segment_id, packet)
 	/**
 	 * Convenient method for knowing how much command data can be sent in one packet
 	 *
@@ -296,6 +295,9 @@ Ronion:: =
 		# We use the same length limit both for encrypted and plaintext packets command data, since plaintext can be wrapped into encrypted one
 		# Total packet size length - version - segment ID - command - command_data_length - MAC (of the packet data)
 		@_packet_size - 1 - 2 - 1 - 2 - @_mac_length
+	_send : (address, segment_id, packet) ->
+		@fire('activity', address, segment_id)
+		@fire('send', address, packet)
 	/**
 	 * @param {!Uint8Array}	address
 	 * @param {!Uint8Array}	segment_id
@@ -359,11 +361,6 @@ Ronion:: =
 					case COMMAND_EXTEND_RESPONSE
 						if @_pending_extensions.has(source_id)
 							@fire('extend_response', address, segment_id, command_data)
-					case COMMAND_DESTROY
-						if @_incoming_established_segments.has(source_id)
-							@_incoming_established_segments.delete(source_id)
-							@_del_segments_forwarding_mapping(address, segment_id)
-							@fire('destroy', address, segment_id)
 					else
 						if command < CUSTOM_COMMANDS_OFFSET
 							return
@@ -382,8 +379,8 @@ Ronion:: =
 						[next_node_address, next_node_segment_id]	= pending_segment_data.forward_to
 						@_unmark_segment_as_pending(address, segment_id)
 						@_unmark_segment_as_pending(next_node_address, next_node_segment_id)
-						@_add_segments_forwarding_mapping(address, segment_id, next_node_address, next_node_segment_id)
-						@_forward_packet_data(source_id, packet_data_encrypted_rewrapped)
+						if @_add_segments_forwarding_mapping(address, segment_id, next_node_address, next_node_segment_id)
+							@_forward_packet_data(source_id, packet_data_encrypted_rewrapped)
 		)
 	/**
 	 * @param {string}		source_id
@@ -392,7 +389,7 @@ Ronion:: =
 	_forward_packet_data : (source_id, packet_data_encrypted) !->
 		[address, segment_id]	= @_segments_forwarding_mapping.get(source_id)
 		packet					= generate_packet(@_packet_size, @_version, segment_id, packet_data_encrypted)
-		@fire('send', address, packet)
+		@_send(address, segment_id, packet)
 	/**
 	 * @param {!Uint8Array} address
 	 *
@@ -436,15 +433,15 @@ Ronion:: =
 	 * @param {!Uint8Array}	address2
 	 * @param {!Uint8Array}	segment_id2
 	 */
-	_add_segments_forwarding_mapping : (address1, segment_id1, address2, segment_id2) !->
-		# Drop any old mappings
-		@_del_segments_forwarding_mapping(address1, segment_id1)
-		@_del_segments_forwarding_mapping(address2, segment_id2)
-
+	_add_segments_forwarding_mapping : (address1, segment_id1, address2, segment_id2) ->
 		source_id1	= compute_source_id(address1, segment_id1)
 		source_id2	= compute_source_id(address2, segment_id2)
+		if @_segments_forwarding_mapping.has(source_id1) || @_segments_forwarding_mapping.has(source_id2)
+			return false
+
 		@_segments_forwarding_mapping.set(source_id1, [address2, segment_id2])
 		@_segments_forwarding_mapping.set(source_id2, [address1, segment_id1])
+		true
 	/**
 	 * @param {!Uint8Array}	address
 	 * @param {!Uint8Array}	segment_id
@@ -493,6 +490,8 @@ Ronion:: =
 			if existing_segment_id.join('') == segment_id_string
 				pending_address_segments.splice(i, 1)
 				return
+		if !pending_address_segments.length
+			@_pending_address_segments.delete(address_string)
 	/**
 	 * @param {!Uint8Array}	address			Node at which routing path has started
 	 * @param {!Uint8Array}	segment_id		Same segment ID as returned by CREATE_REQUEST

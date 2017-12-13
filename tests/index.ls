@@ -133,7 +133,7 @@ for let node, source_address in nodes
 	)
 
 test('Ronion', (t) !->
-	t.plan(36)
+	t.plan(24)
 
 	node_0	= nodes[0]
 	node_1	= nodes[1]
@@ -196,37 +196,17 @@ test('Ronion', (t) !->
 								t.equal(command_data.join(''), data_2_to_0.join(''), 'Command data received fine #4')
 
 								source_id	= compute_source_id(node_1._address, segment_id)
-								t.equal(node_0._outgoing_established_segments.size, 1, 'Correct number of routes before destroying')
-								t.equal(node_0._outgoing_established_segments.get(source_id).length, 3, 'Correct route length before destroying')
+								t.equal(node_0._outgoing_established_segments.size, 1, 'Correct number of outgoing segments on node 0 before destroying')
+								t.equal(node_0._outgoing_established_segments.get(source_id).length, 3, 'Correct route length on node 0 before destroying')
 								t.equal(node_1._incoming_established_segments.size, 1, 'There is incoming segment on node 1 before destroying')
 								t.equal(node_1._segments_forwarding_mapping.size, 2, 'There is forwarding segments mapping on node 1 before destroying')
-								t.equal(node_2._incoming_established_segments.size, 1, 'There is incoming segment on node 2 before destroying')
 
-								node_3.once('destroy', !->
-									t.equal(node_0._outgoing_established_segments.size, 1, 'Correct number of routes after first destroying')
-									t.equal(node_0._outgoing_established_segments.get(source_id).length, 2, 'Correct route length after first destroying')
-									t.equal(node_1._incoming_established_segments.size, 1, 'There is incoming segment on node 1 after first destroying')
-									t.equal(node_1._segments_forwarding_mapping.size, 2, 'There is still forwarding segments mapping on node 1 after first destroying')
-									t.equal(node_2._incoming_established_segments.size, 1, 'There is no incoming segment on node 2 after first destroying')
-									t.equal(node_3._incoming_established_segments.size, 0, 'There is no incoming segment on node 3 after first destroying')
-
-									node_2.once('destroy', !->
-										t.equal(node_0._outgoing_established_segments.size, 1, 'Correct number of routes after second destroying')
-										t.equal(node_0._outgoing_established_segments.get(source_id).length, 1, 'Correct route length after second destroying')
-										t.equal(node_1._incoming_established_segments.size, 1, 'There is incoming segment on node 1 after second destroying')
-										t.equal(node_1._segments_forwarding_mapping.size, 2, 'There is still forwarding segments mapping on node 1 after second destroying')
-										t.equal(node_2._incoming_established_segments.size, 0, 'There is no incoming segment on node 2 after second destroying')
-
-										node_1.once('destroy', !->
-											t.equal(node_0._outgoing_established_segments.size, 0, 'No routes after third destroying')
-											t.equal(node_1._incoming_established_segments.size, 0, 'There is no incoming segment on node 1 after third destroying')
-											t.equal(node_1._segments_forwarding_mapping.size, 0, 'There is no forwarding segments mapping on node 1 after third destroying')
-										)
-										node_0.destroy(node_1._address, segment_id)
-									)
-									node_0.destroy(node_1._address, segment_id)
-								)
 								node_0.destroy(node_1._address, segment_id)
+								t.equal(node_0._outgoing_established_segments.size, 0, 'Correct number of outgoing segments on node 0 after destroying')
+
+								node_1.destroy(node_0._address, node_1._in_segment_id)
+								t.equal(node_1._incoming_established_segments.size, 0, 'Correct number of incoming segments on node 1 after destroying')
+								t.equal(node_1._segments_forwarding_mapping.size, 0, 'Correct number of forwarding mappings on node 1 after destroying')
 							)
 							node_2.data(node_1._address, node_2._in_segment_id, node_1._address, 0, data_2_to_0)
 						)

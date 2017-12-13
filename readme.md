@@ -88,9 +88,7 @@ Confirms that the routing path was extended by one more segment successfully.
 * `segment_id` - Segment ID returned by `Ronion.create_request` method
 
 #### Ronion.destroy(address : Uint8Array, segment_id : Uint8Array)
-Destroys last segment of the routing path. Routing path can be re-extended to other node later (but take into account possible anonymity implications while doing so).
-
-As soon as the first segment in routing path is destroyed, routing path itself is considered being destroyed.
+Removes any mapping that uses specified address and segment ID, considers connection to be destroyed.
 
 * `address` - Address used in `Ronion.create_request` method
 * `segment_id` - Segment ID returned by `Ronion.create_request` method
@@ -115,6 +113,13 @@ Register one-time event handler (just `on()` + `off()` under the hood).
 
 #### Ronion.off(event: string[, callback: Function]) : Ronion
 Unregister event handler.
+
+#### Event: activity
+Payload consists of two `Uint8Array` arguments: `address` and `segment_id`.
+
+Event is fired when packet is sent/received from/to `address` with segment ID `segment_id`.
+
+This event can be used to track when packets are flowing on certain `address` and `segment_id` and decide when to consider routing path as inactive and destroy it.
 
 #### Event: send
 Payload consists of two `Uint8Array` arguments: `address` and `packet`.
@@ -141,13 +146,6 @@ Event is fired when `CREATE_RESPONSE` command was received from `address` with s
 Payload consists of three `Uint8Array` arguments: `address`, `segment_id` and `command_data`.
 
 Event is fired when `EXTEND_RESPONSE` command was received from `address` with segment ID `segment_id` as an answer to `Ronion.extend_request` method call. `command_data` contains the data that were specified by the node `next_node_address` from `Ronion.extend_request` method call.
-
-`false` or `Promise.reject()` can be returned from event handler in order to indicate non-fatal failure.
-
-#### Event: destroy
-Payload consists of two `Uint8Array` arguments: `address` and `segment_id`.
-
-Event is fired when `DESTROY` command was received from `address` with segment ID `segment_id`.
 
 `false` or `Promise.reject()` can be returned from event handler in order to indicate non-fatal failure.
 
