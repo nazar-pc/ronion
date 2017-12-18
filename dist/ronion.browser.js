@@ -205,6 +205,11 @@
   function compute_source_id(address, segment_id){
     return address.join(',') + segment_id.join(',');
   }
+  function error_handler(error){
+    if (error instanceof Error) {
+      return console.error(error);
+    }
+  }
   /**
    * @constructor
    * @extends {Eventer}
@@ -363,7 +368,7 @@
       this._generate_packet_encrypted(address, segment_id, target_address, COMMAND_EXTEND_REQUEST, command_data_full).then(function(packet){
         this$._send(address, segment_id, packet);
         this$._pending_extensions.set(source_id, next_node_address);
-      });
+      })['catch'](error_handler);
     }
     /**
      * @param {!Uint8Array}	address
@@ -374,7 +379,7 @@
       var this$ = this;
       this._generate_packet_encrypted(address, segment_id, address, COMMAND_EXTEND_RESPONSE, command_data).then(function(packet){
         this$._send(address, segment_id, packet);
-      });
+      })['catch'](error_handler);
     }
     /**
      * Removes any mapping that uses specified address and segment ID, considers connection to be destroyed
@@ -420,7 +425,7 @@
       }
       this._generate_packet_encrypted(address, segment_id, target_address, command + CUSTOM_COMMANDS_OFFSET, command_data).then(function(packet){
         this$._send(address, segment_id, packet);
-      });
+      })['catch'](error_handler);
     }
     /**
      * Convenient method for knowing how much command data can be sent in one packet
@@ -533,7 +538,7 @@
             }
           }
         });
-      });
+      })['catch'](error_handler);
     }
     /**
      * @param {string}		source_id
@@ -693,7 +698,7 @@
         var ciphertext;
         ciphertext = data['ciphertext'];
         if (!(ciphertext instanceof Uint8Array) || ciphertext.length !== plaintext.length + this$._mac_length) {
-          throw new Error('Encryption failed');
+          throw 'Encryption failed';
         }
         return ciphertext;
       });
@@ -760,12 +765,11 @@
           var plaintext;
           plaintext = data['plaintext'];
           if (!(plaintext instanceof Uint8Array) || plaintext.length !== ciphertext.length - this$._mac_length) {
-            throw new Error('Decryption failed');
+            throw 'Decryption failed';
           }
           return data;
         });
       });
-      promise['catch'](function(){});
       return promise;
     }
     /**
@@ -794,7 +798,7 @@
      * @return {!Promise} Will resolve with Uint8Array wrapped data
      */,
     _wrap: function(address, segment_id, target_address, unwrapped){
-      var data, promise, this$ = this;
+      var data, this$ = this;
       data = {
         'address': address,
         'segment_id': segment_id,
@@ -802,16 +806,14 @@
         'unwrapped': unwrapped,
         'wrapped': null
       };
-      promise = this.fire('wrap', data).then(function(){
+      return this.fire('wrap', data).then(function(){
         var wrapped;
         wrapped = data['wrapped'];
         if (!(wrapped instanceof Uint8Array) || wrapped.length !== unwrapped.length) {
-          throw new Error('Re-wrapping failed');
+          throw 'Wrapping failed';
         }
         return wrapped;
       });
-      promise['catch'](function(){});
-      return promise;
     }
     /**
      * @param {!Uint8Array}	address
@@ -822,7 +824,7 @@
      * @return {!Promise} Will resolve with Uint8Array unwrapped data
      */,
     _unwrap: function(address, segment_id, target_address, wrapped){
-      var data, promise, this$ = this;
+      var data, this$ = this;
       data = {
         'address': address,
         'segment_id': segment_id,
@@ -830,16 +832,14 @@
         'wrapped': wrapped,
         'unwrapped': null
       };
-      promise = this.fire('unwrap', data).then(function(){
+      return this.fire('unwrap', data).then(function(){
         var unwrapped;
         unwrapped = data['unwrapped'];
         if (!(unwrapped instanceof Uint8Array) || unwrapped.length !== wrapped.length) {
-          throw new Error('Re-wrapping failed');
+          throw 'Unwrapping failed';
         }
         return unwrapped;
       });
-      promise['catch'](function(){});
-      return promise;
     }
   };
   Ronion.prototype = Object.assign(Object.create(asyncEventer.prototype), Ronion.prototype);

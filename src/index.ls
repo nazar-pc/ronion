@@ -93,6 +93,10 @@ function compute_source_id (address, segment_id)
 	# `join()` is used instead of `toString()` in order to support `Buffer`, which will return binary string on `toString()`
 	address.join(',') + segment_id.join(',')
 
+function error_handler (error)
+	if error instanceof Error
+		console.error(error)
+
 /**
  * @constructor
  * @extends {Eventer}
@@ -237,17 +241,21 @@ Ronion:: =
 		command_data_full	= new Uint8Array(next_node_address.length + command_data.length)
 			..set(next_node_address)
 			..set(command_data, next_node_address.length)
-		@_generate_packet_encrypted(address, segment_id, target_address, COMMAND_EXTEND_REQUEST, command_data_full).then (packet) !~>
-			@_send(address, segment_id, packet)
-			@_pending_extensions.set(source_id, next_node_address)
+		@_generate_packet_encrypted(address, segment_id, target_address, COMMAND_EXTEND_REQUEST, command_data_full)
+			.then (packet) !~>
+				@_send(address, segment_id, packet)
+				@_pending_extensions.set(source_id, next_node_address)
+			.catch(error_handler)
 	/**
 	 * @param {!Uint8Array}	address
 	 * @param {!Uint8Array}	segment_id
 	 * @param {!Uint8Array}	command_data
 	 */
 	_extend_response : (address, segment_id, command_data) !->
-		@_generate_packet_encrypted(address, segment_id, address, COMMAND_EXTEND_RESPONSE, command_data).then (packet) !~>
-			@_send(address, segment_id, packet)
+		@_generate_packet_encrypted(address, segment_id, address, COMMAND_EXTEND_RESPONSE, command_data)
+			.then (packet) !~>
+				@_send(address, segment_id, packet)
+			.catch(error_handler)
 	/**
 	 * Removes any mapping that uses specified address and segment ID, considers connection to be destroyed
 	 *
@@ -284,8 +292,10 @@ Ronion:: =
 			throw new ReferenceError('There is no such segment established')
 		if command_data.length > @get_max_command_data_length()
 			throw new RangeError('Too much command data')
-		@_generate_packet_encrypted(address, segment_id, target_address, command + CUSTOM_COMMANDS_OFFSET, command_data).then (packet) !~>
-			@_send(address, segment_id, packet)
+		@_generate_packet_encrypted(address, segment_id, target_address, command + CUSTOM_COMMANDS_OFFSET, command_data)
+			.then (packet) !~>
+				@_send(address, segment_id, packet)
+			.catch(error_handler)
 	/**
 	 * Convenient method for knowing how much command data can be sent in one packet
 	 *
@@ -330,58 +340,60 @@ Ronion:: =
 	 */
 	_process_packet_data_encrypted : (address, segment_id, packet_data_encrypted) !->
 		# Always re-wrap encrypted data at least once
-		(packet_data_encrypted_rewrapped)	<~! @_rewrap(address, segment_id, packet_data_encrypted).then
-		source_id							= compute_source_id(address, segment_id)
-		# When packets move in direction towards initiator, just forward without decryption attempt
-		if !@_incoming_established_segments.has(source_id) && @_segments_forwarding_mapping.has(source_id)
-			@_forward_packet_data(source_id, packet_data_encrypted_rewrapped)
-			return
-		@_decrypt_and_unwrap(address, segment_id, packet_data_encrypted_rewrapped).then(
-			(result) !~>
-				packet_data				= result['plaintext']
-				[command, command_data]	= parse_packet_data(packet_data)
-				switch command
-					case COMMAND_EXTEND_REQUEST
-						try
-							next_node_address				= command_data.subarray(0, @_address_length)
-							segment_creation_request_data	= command_data.subarray(@_address_length)
-							next_node_segment_id			= @create_request(next_node_address, segment_creation_request_data)
-							original_source					= {address, segment_id}
-							forward_to						= [next_node_address, next_node_segment_id]
-							# Segment will be marked as pending in `create_request()` call, but here we override it with additional data
-							# Segment to the next node is not added to forwarding until source sends data this node can't decrypt
-							@_mark_segment_as_pending(address, segment_id, {forward_to})
-							@_mark_segment_as_pending(next_node_address, next_node_segment_id, {original_source})
-						catch e
-							if !(e instanceof RangeError)
-								throw e
-							# Send empty EXTEND_RESPONSE indicating that it is not possible to extend routing path
-							@_extend_response(address, segment_id, new Uint8Array(0))
-							return
-					case COMMAND_EXTEND_RESPONSE
-						if @_pending_extensions.has(source_id)
-							@fire('extend_response', address, segment_id, command_data)
-					else
-						if command < CUSTOM_COMMANDS_OFFSET
-							return
-						command	-= CUSTOM_COMMANDS_OFFSET
-						@fire('data', address, segment_id, result['target_address'], command, command_data)
-			!~>
-				if @_segments_forwarding_mapping.has(source_id)
+		@_rewrap(address, segment_id, packet_data_encrypted)
+			.then (packet_data_encrypted_rewrapped) !~>
+				source_id							= compute_source_id(address, segment_id)
+				# When packets move in direction towards initiator, just forward without decryption attempt
+				if !@_incoming_established_segments.has(source_id) && @_segments_forwarding_mapping.has(source_id)
 					@_forward_packet_data(source_id, packet_data_encrypted_rewrapped)
-				else if @_pending_segments.has(source_id)
-					# Now we've got packet on incoming segment, which is pending at the same time
-					# This can mean that segment was used to extend routing path to the next node (in which case there should be `forward_to`)
-					pending_segment_data	= @_pending_segments.get(source_id)
-					if pending_segment_data.forward_to
-						# Since we can't decrypt the packet, this means that the extension succeeded and initiator sends encrypted messages to that node
-						# We can now forwarding mapping for segments
-						[next_node_address, next_node_segment_id]	= pending_segment_data.forward_to
-						@_unmark_segment_as_pending(address, segment_id)
-						@_unmark_segment_as_pending(next_node_address, next_node_segment_id)
-						if @_add_segments_forwarding_mapping(address, segment_id, next_node_address, next_node_segment_id)
+					return
+				@_decrypt_and_unwrap(address, segment_id, packet_data_encrypted_rewrapped).then(
+					(result) !~>
+						packet_data				= result['plaintext']
+						[command, command_data]	= parse_packet_data(packet_data)
+						switch command
+							case COMMAND_EXTEND_REQUEST
+								try
+									next_node_address				= command_data.subarray(0, @_address_length)
+									segment_creation_request_data	= command_data.subarray(@_address_length)
+									next_node_segment_id			= @create_request(next_node_address, segment_creation_request_data)
+									original_source					= {address, segment_id}
+									forward_to						= [next_node_address, next_node_segment_id]
+									# Segment will be marked as pending in `create_request()` call, but here we override it with additional data
+									# Segment to the next node is not added to forwarding until source sends data this node can't decrypt
+									@_mark_segment_as_pending(address, segment_id, {forward_to})
+									@_mark_segment_as_pending(next_node_address, next_node_segment_id, {original_source})
+								catch e
+									if !(e instanceof RangeError)
+										throw e
+									# Send empty EXTEND_RESPONSE indicating that it is not possible to extend routing path
+									@_extend_response(address, segment_id, new Uint8Array(0))
+									return
+							case COMMAND_EXTEND_RESPONSE
+								if @_pending_extensions.has(source_id)
+									@fire('extend_response', address, segment_id, command_data)
+							else
+								if command < CUSTOM_COMMANDS_OFFSET
+									return
+								command	-= CUSTOM_COMMANDS_OFFSET
+								@fire('data', address, segment_id, result['target_address'], command, command_data)
+					!~>
+						if @_segments_forwarding_mapping.has(source_id)
 							@_forward_packet_data(source_id, packet_data_encrypted_rewrapped)
-		)
+						else if @_pending_segments.has(source_id)
+							# Now we've got packet on incoming segment, which is pending at the same time
+							# This can mean that segment was used to extend routing path to the next node (in which case there should be `forward_to`)
+							pending_segment_data	= @_pending_segments.get(source_id)
+							if pending_segment_data.forward_to
+								# Since we can't decrypt the packet, this means that the extension succeeded and initiator sends encrypted messages to that node
+								# We can now forwarding mapping for segments
+								[next_node_address, next_node_segment_id]	= pending_segment_data.forward_to
+								@_unmark_segment_as_pending(address, segment_id)
+								@_unmark_segment_as_pending(next_node_address, next_node_segment_id)
+								if @_add_segments_forwarding_mapping(address, segment_id, next_node_address, next_node_segment_id)
+									@_forward_packet_data(source_id, packet_data_encrypted_rewrapped)
+				)
+			.catch(error_handler)
 	/**
 	 * @param {string}		source_id
 	 * @param {!Uint8Array}	packet_data_encrypted
@@ -511,7 +523,7 @@ Ronion:: =
 		promise		= @fire('encrypt', data).then ~>
 			ciphertext	= data['ciphertext']
 			if !(ciphertext instanceof Uint8Array) || ciphertext.length != (plaintext.length + @_mac_length)
-				throw new Error('Encryption failed')
+				throw 'Encryption failed'
 			ciphertext
 		# Now wrap ciphertext as many times as needed
 		if @_outgoing_established_segments.has(source_id)
@@ -568,9 +580,8 @@ Ronion:: =
 				.then ~>
 					plaintext	= data['plaintext']
 					if !(plaintext instanceof Uint8Array) || plaintext.length != (ciphertext.length - @_mac_length)
-						throw new Error('Decryption failed')
+						throw 'Decryption failed'
 					data
-		promise.catch(->) # Just to avoid unhandled promise rejection
 		promise
 	/**
 	 * @param {!Uint8Array}	source_address
@@ -602,13 +613,11 @@ Ronion:: =
 			'target_address'	: target_address
 			'unwrapped'			: unwrapped
 			'wrapped'			: null
-		promise	= @fire('wrap', data).then ~>
+		@fire('wrap', data).then ~>
 			wrapped	= data['wrapped']
 			if !(wrapped instanceof Uint8Array) || wrapped.length != unwrapped.length
-				throw new Error('Re-wrapping failed')
+				throw 'Wrapping failed'
 			wrapped
-		promise.catch(->) # Just to avoid unhandled promise rejection
-		promise
 	/**
 	 * @param {!Uint8Array}	address
 	 * @param {!Uint8Array}	segment_id
@@ -624,13 +633,11 @@ Ronion:: =
 			'target_address'	: target_address
 			'wrapped'			: wrapped
 			'unwrapped'			: null
-		promise	= @fire('unwrap', data).then ~>
+		@fire('unwrap', data).then ~>
 			unwrapped	= data['unwrapped']
 			if !(unwrapped instanceof Uint8Array) || unwrapped.length != wrapped.length
-				throw new Error('Re-wrapping failed')
+				throw 'Unwrapping failed'
 			unwrapped
-		promise.catch(->) # Just to avoid unhandled promise rejection
-		promise
 
 Ronion:: = Object.assign(Object.create(async-eventer::), Ronion::)
 
