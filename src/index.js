@@ -614,7 +614,6 @@
           return this$._wrap(address, segment_id, target_address, ciphertext);
         });
       });
-      promise['catch'](function(){});
       return promise;
     }
     /**

@@ -542,7 +542,6 @@ Ronion:: =
 		target_addresses.reverse().forEach (target_address) ~>
 			promise	:= promise.then (ciphertext) ~>
 				@_wrap(address, segment_id, target_address, ciphertext)
-		promise.catch(->) # Just to avoid unhandled promise rejection
 		promise
 	/**
 	 * @param {!Uint8Array}	address		Node at which routing path has started
