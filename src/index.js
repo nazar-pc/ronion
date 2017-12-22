@@ -409,8 +409,7 @@
             if (command < CUSTOM_COMMANDS_OFFSET) {
               return;
             }
-            command -= CUSTOM_COMMANDS_OFFSET;
-            this$.fire('data', address, segment_id, result['target_address'], command, command_data);
+            this$.fire('data', address, segment_id, result['target_address'], command - CUSTOM_COMMANDS_OFFSET, command_data);
           }
         }, function(){
           var pending_segment_data, ref$, next_node_address, next_node_segment_id;

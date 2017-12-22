@@ -375,8 +375,7 @@ Ronion:: =
 							else
 								if command < CUSTOM_COMMANDS_OFFSET
 									return
-								command	-= CUSTOM_COMMANDS_OFFSET
-								@fire('data', address, segment_id, result['target_address'], command, command_data)
+								@fire('data', address, segment_id, result['target_address'], command - CUSTOM_COMMANDS_OFFSET, command_data)
 					!~>
 						if @_segments_forwarding_mapping.has(source_id)
 							@_forward_packet_data(source_id, packet_data_encrypted_rewrapped)
