@@ -1,6 +1,6 @@
 # Ronion anonymous routing protocol framework design
 
-Complements specification version: 0.7.0
+Complements specification version: 0.8.0
 
 Author: Nazar Mokrynskyi
 

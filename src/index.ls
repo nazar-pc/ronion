@@ -5,7 +5,7 @@
  * @license   MIT License, see license.txt
  */
 /*
- * Implements version 0.7.0 of the specification
+ * Implements version 0.8.0 of the specification
  */
 async-eventer	= require('async-eventer')
 
@@ -38,11 +38,11 @@ function number_to_uint_array (number)
 /**
  * @param {!Uint8Array} packet
  *
- * @return {!Array} [version: number, segment_id: Uint8Array, packet_data: Uint8Array]
+ * @return {!Array} [segment_id: Uint8Array, packet_data: Uint8Array]
  */
 function parse_packet (packet)
-	# First byte is version, next 2 bytes are segment_id and the rest are packet data
-	[packet[0], packet.subarray(1, 3), packet.subarray(3)]
+	# First 2 bytes are segment_id and the rest are packet data
+	[packet.subarray(0, 2), packet.subarray(2)]
 
 /**
  * @param {!Uint8Array} packet_data
@@ -57,17 +57,15 @@ function parse_packet_data (packet_data)
 
 /**
  * @param {number}		packet_size
- * @param {number}		version
  * @param {!Uint8Array}	segment_id
  * @param {!Uint8Array}	packet_data
  *
  * @return {!Uint8Array}
  */
-function generate_packet (packet_size, version, segment_id, packet_data)
+function generate_packet (packet_size, segment_id, packet_data)
 	new Uint8Array(packet_size)
-		..set([version])
-		..set(segment_id, 1)
-		..set(packet_data, 3)
+		..set(segment_id)
+		..set(packet_data, 2)
 
 /**
  * @param {number}		command
@@ -101,22 +99,20 @@ function error_handler (error)
  * @constructor
  * @extends {Eventer}
  *
- * @param {number}	version					Application-specific version 0..255
  * @param {number}	packet_size				Packets will always have exactly this size
  * @param {number}	address_length			Length of the node address
  * @param {number}	mac_length				Length of the MAC that is added to ciphertext during encryption
  * @param {number}	[max_pending_segments]	How much segments can be in pending state per one address
  */
-!function Ronion (version, packet_size, address_length, mac_length, max_pending_segments = 10)
+!function Ronion (packet_size, address_length, mac_length, max_pending_segments = 10)
 	if !(@ instanceof Ronion)
-		return new Ronion(version, packet_size, address_length, mac_length, max_pending_segments)
+		return new Ronion(packet_size, address_length, mac_length, max_pending_segments)
 	async-eventer.call(@)
 
 	/**
 	 * Routing path segments naming:
 	 * initiator [outgoing segment] -> [incoming segment] middle node #1 -> [incoming segment] middle node #2 -> [incoming segment] -> responder
 	 */
-	@_version							= version
 	@_packet_size						= packet_size
 	@_address_length					= address_length
 	@_mac_length						= mac_length
@@ -145,10 +141,7 @@ Ronion:: =
 		# Do nothing if packet or its size is incorrect
 		if packet.length != @_packet_size
 			return
-		[version, segment_id, packet_data]	= parse_packet(packet)
-		# Do nothing the version is unsupported
-		if version != @_version
-			return
+		[segment_id, packet_data]	= parse_packet(packet)
 		@fire('activity', address, segment_id)
 		# If segment is not established then we don't use encryption yet
 		source_id	= compute_source_id(address, segment_id)
@@ -303,8 +296,8 @@ Ronion:: =
 	 */
 	'get_max_command_data_length' : ->
 		# We use the same length limit both for encrypted and plaintext packets command data, since plaintext can be wrapped into encrypted one
-		# Total packet size length - version - segment ID - command - command_data_length - MAC (of the packet data)
-		@_packet_size - 1 - 2 - 1 - 2 - @_mac_length
+		# Total packet size length - segment ID - command - command_data_length - MAC (of the packet data)
+		@_packet_size - 2 - 1 - 2 - @_mac_length
 	_send : (address, segment_id, packet) ->
 		@fire('activity', address, segment_id)
 		@fire('send', address, packet)
@@ -399,7 +392,7 @@ Ronion:: =
 	 */
 	_forward_packet_data : (source_id, packet_data_encrypted) !->
 		[address, segment_id]	= @_segments_forwarding_mapping.get(source_id)
-		packet					= generate_packet(@_packet_size, @_version, segment_id, packet_data_encrypted)
+		packet					= generate_packet(@_packet_size, segment_id, packet_data_encrypted)
 		@_send(address, segment_id, packet)
 	/**
 	 * @param {!Uint8Array} address
@@ -424,7 +417,7 @@ Ronion:: =
 	 */
 	_generate_packet_plaintext : (segment_id, command, command_data) ->
 		packet_data	= generate_packet_data(command, command_data, @get_max_command_data_length())
-		generate_packet(@_packet_size, @_version, segment_id, packet_data)
+		generate_packet(@_packet_size, segment_id, packet_data)
 	/**
 	 * @param {!Uint8Array}	address
 	 * @param {!Uint8Array}	segment_id
@@ -437,7 +430,7 @@ Ronion:: =
 	_generate_packet_encrypted : (address, segment_id, target_address, command, command_data) ->
 		packet_data	= generate_packet_data(command, command_data, @get_max_command_data_length())
 		@_encrypt_and_wrap(address, segment_id, target_address, packet_data).then (packet_data_encrypted) ~>
-			generate_packet(@_packet_size, @_version, segment_id, packet_data_encrypted)
+			generate_packet(@_packet_size, segment_id, packet_data_encrypted)
 	/**
 	 * @param {!Uint8Array}	address1
 	 * @param {!Uint8Array}	segment_id1

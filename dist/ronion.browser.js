@@ -117,7 +117,7 @@
  */
 (function(){
   /*
-   * Implements version 0.7.0 of the specification
+   * Implements version 0.8.0 of the specification
    */
   var asyncEventer, COMMAND_CREATE_REQUEST, COMMAND_CREATE_RESPONSE, COMMAND_EXTEND_REQUEST, COMMAND_EXTEND_RESPONSE, CUSTOM_COMMANDS_OFFSET;
   asyncEventer = require('async-eventer');
@@ -149,10 +149,10 @@
   /**
    * @param {!Uint8Array} packet
    *
-   * @return {!Array} [version: number, segment_id: Uint8Array, packet_data: Uint8Array]
+   * @return {!Array} [segment_id: Uint8Array, packet_data: Uint8Array]
    */
   function parse_packet(packet){
-    return [packet[0], packet.subarray(1, 3), packet.subarray(3)];
+    return [packet.subarray(0, 2), packet.subarray(2)];
   }
   /**
    * @param {!Uint8Array} packet_data
@@ -167,18 +167,16 @@
   }
   /**
    * @param {number}		packet_size
-   * @param {number}		version
    * @param {!Uint8Array}	segment_id
    * @param {!Uint8Array}	packet_data
    *
    * @return {!Uint8Array}
    */
-  function generate_packet(packet_size, version, segment_id, packet_data){
+  function generate_packet(packet_size, segment_id, packet_data){
     var x$;
     x$ = new Uint8Array(packet_size);
-    x$.set([version]);
-    x$.set(segment_id, 1);
-    x$.set(packet_data, 3);
+    x$.set(segment_id);
+    x$.set(packet_data, 2);
     return x$;
   }
   /**
@@ -214,23 +212,21 @@
    * @constructor
    * @extends {Eventer}
    *
-   * @param {number}	version					Application-specific version 0..255
    * @param {number}	packet_size				Packets will always have exactly this size
    * @param {number}	address_length			Length of the node address
    * @param {number}	mac_length				Length of the MAC that is added to ciphertext during encryption
    * @param {number}	[max_pending_segments]	How much segments can be in pending state per one address
    */
-  function Ronion(version, packet_size, address_length, mac_length, max_pending_segments){
+  function Ronion(packet_size, address_length, mac_length, max_pending_segments){
     max_pending_segments == null && (max_pending_segments = 10);
     if (!(this instanceof Ronion)) {
-      return new Ronion(version, packet_size, address_length, mac_length, max_pending_segments);
+      return new Ronion(packet_size, address_length, mac_length, max_pending_segments);
     }
     asyncEventer.call(this);
     /**
      * Routing path segments naming:
      * initiator [outgoing segment] -> [incoming segment] middle node #1 -> [incoming segment] middle node #2 -> [incoming segment] -> responder
      */
-    this._version = version;
     this._packet_size = packet_size;
     this._address_length = address_length;
     this._mac_length = mac_length;
@@ -250,14 +246,11 @@
      * @param {!Uint8Array}	packet	Packet
      */
     'process_packet': function(address, packet){
-      var ref$, version, segment_id, packet_data, source_id;
+      var ref$, segment_id, packet_data, source_id;
       if (packet.length !== this._packet_size) {
         return;
       }
-      ref$ = parse_packet(packet), version = ref$[0], segment_id = ref$[1], packet_data = ref$[2];
-      if (version !== this._version) {
-        return;
-      }
+      ref$ = parse_packet(packet), segment_id = ref$[0], packet_data = ref$[1];
       this.fire('activity', address, segment_id);
       source_id = compute_source_id(address, segment_id);
       if (this._outgoing_established_segments.has(source_id) || this._incoming_established_segments.has(source_id) || this._segments_forwarding_mapping.has(source_id)) {
@@ -433,7 +426,7 @@
      * @return {number}
      */,
     'get_max_command_data_length': function(){
-      return this._packet_size - 1 - 2 - 1 - 2 - this._mac_length;
+      return this._packet_size - 2 - 1 - 2 - this._mac_length;
     },
     _send: function(address, segment_id, packet){
       this.fire('activity', address, segment_id);
@@ -519,8 +512,7 @@
             if (command < CUSTOM_COMMANDS_OFFSET) {
               return;
             }
-            command -= CUSTOM_COMMANDS_OFFSET;
-            this$.fire('data', address, segment_id, result['target_address'], command, command_data);
+            this$.fire('data', address, segment_id, result['target_address'], command - CUSTOM_COMMANDS_OFFSET, command_data);
           }
         }, function(){
           var pending_segment_data, ref$, next_node_address, next_node_segment_id;
@@ -547,7 +539,7 @@
     _forward_packet_data: function(source_id, packet_data_encrypted){
       var ref$, address, segment_id, packet;
       ref$ = this._segments_forwarding_mapping.get(source_id), address = ref$[0], segment_id = ref$[1];
-      packet = generate_packet(this._packet_size, this._version, segment_id, packet_data_encrypted);
+      packet = generate_packet(this._packet_size, segment_id, packet_data_encrypted);
       this._send(address, segment_id, packet);
     }
     /**
@@ -579,7 +571,7 @@
     _generate_packet_plaintext: function(segment_id, command, command_data){
       var packet_data;
       packet_data = generate_packet_data(command, command_data, this.get_max_command_data_length());
-      return generate_packet(this._packet_size, this._version, segment_id, packet_data);
+      return generate_packet(this._packet_size, segment_id, packet_data);
     }
     /**
      * @param {!Uint8Array}	address
@@ -594,7 +586,7 @@
       var packet_data, this$ = this;
       packet_data = generate_packet_data(command, command_data, this.get_max_command_data_length());
       return this._encrypt_and_wrap(address, segment_id, target_address, packet_data).then(function(packet_data_encrypted){
-        return generate_packet(this$._packet_size, this$._version, segment_id, packet_data_encrypted);
+        return generate_packet(this$._packet_size, segment_id, packet_data_encrypted);
       });
     }
     /**
@@ -724,7 +716,6 @@
           return this$._wrap(address, segment_id, target_address, ciphertext);
         });
       });
-      promise['catch'](function(){});
       return promise;
     }
     /**

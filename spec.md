@@ -1,6 +1,6 @@
 # Ronion anonymous routing protocol framework specification
 
-Specification version: 0.7.0
+Specification version: 0.8.0
 
 Author: Nazar Mokrynskyi
 
@@ -50,11 +50,9 @@ Exact value can be specified after data piece size separated by coma: `[data: 2,
 
 #### Packet format
 ```
-[version: 1][segment_id: 2][packet_data]
+[segment_id: 2][packet_data]
 ```
 
-`[version]` encapsulates address format, crypto algorithms used, set of commands and other important details used on that connection, supplied by application.
-Version is kept the same on each hop of the same routing path and never changes in the middle of the routing path.
 `[segment_id]` is unique to each segment of the network, the response MUST always preserve `[segment_id]` of the request so that it is clear where to send it further.
 
 #### Packet size

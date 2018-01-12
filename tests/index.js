@@ -66,7 +66,7 @@
   function compute_source_id(address, segment_id){
     return address.join(',') + segment_id.join(',');
   }
-  nodes = [new lib(1, 512, 1, MAC_LENGTH), new lib(1, 512, 1, MAC_LENGTH), new lib(1, 512, 1, MAC_LENGTH), new lib(1, 512, 1, MAC_LENGTH)];
+  nodes = [new lib(512, 1, MAC_LENGTH), new lib(512, 1, MAC_LENGTH), new lib(512, 1, MAC_LENGTH), new lib(512, 1, MAC_LENGTH)];
   for (i$ = 0, len$ = nodes.length; i$ < len$; ++i$) {
     (fn$.call(this, i$, nodes[i$]));
   }
@@ -77,7 +77,7 @@
     node_1 = nodes[1];
     node_2 = nodes[2];
     node_3 = nodes[3];
-    t.equal(node_0.get_max_command_data_length(), 490, 'Max command data length computed correctly');
+    t.equal(node_0.get_max_command_data_length(), 491, 'Max command data length computed correctly');
     node_1.once('create_request', function(arg$, arg1$, command_data){
       t.equal(command_data.join(''), key.join(''), 'Create request works');
     });

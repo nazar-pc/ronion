@@ -69,10 +69,10 @@ function compute_source_id (address, segment_id)
 
 # Address of the node is simply its index in this array
 nodes	= [
-	new lib(1, 512, 1, MAC_LENGTH)
-	new lib(1, 512, 1, MAC_LENGTH)
-	new lib(1, 512, 1, MAC_LENGTH)
-	new lib(1, 512, 1, MAC_LENGTH)
+	new lib(512, 1, MAC_LENGTH)
+	new lib(512, 1, MAC_LENGTH)
+	new lib(512, 1, MAC_LENGTH)
+	new lib(512, 1, MAC_LENGTH)
 ]
 
 for let node, source_address in nodes
@@ -140,7 +140,7 @@ test('Ronion', (t) !->
 	node_2	= nodes[2]
 	node_3	= nodes[3]
 
-	t.equal(node_0.get_max_command_data_length(), 490, 'Max command data length computed correctly')
+	t.equal(node_0.get_max_command_data_length(), 491, 'Max command data length computed correctly')
 
 	# Establish first segment
 	node_1.once('create_request', (, , command_data) !->
