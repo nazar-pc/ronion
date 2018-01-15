@@ -9,25 +9,14 @@
 		"mix network",
 		"p2p"
 	],
-	"version"         : "0.6.0",
+	"version"         : "0.6.1",
 	"homepage"        : "https://github.com/nazar-pc/ronion",
-	"author"          : {
-		"name"  : "Nazar Mokrynskyi",
-		"email" : "nazar@mokrynskyi.com",
-		"url"   : "https://cleverstyle.org"
-	},
+	"author"          : "Nazar Mokrynskyi <nazar@mokrynskyi.com>",
 	"repository"      : {
 		"type" : "git",
 		"url"  : "git://github.com/nazar-pc/ronion.git"
 	},
-	"licenses"        : [
-		{
-			"type" : "MIT",
-			"url"  : "https://github.com/nazar-pc/ronion/blob/master/license.txt"
-		}
-	],
-	"bugs"            : "https://github.com/nazar-pc/ronion/issues",
-	"docs"            : "https://github.com/nazar-pc/ronion",
+	"license"         : "0BSD",
 	"main"            : "src/index.js",
 	"files"           : [
 		"dist",
@@ -41,13 +30,9 @@
 		"async-eventer" : "^1.1.4"
 	},
 	"devDependencies" : {
-		"browserify"                 : "^14.5.0",
-		"del"                        : "^3.0.0",
-		"google-closure-compiler-js" : "^20170910.0.1",
-		"gulp"                       : "^3.9.1",
-		"gulp-rename"                : "^1.2.2",
-		"gulp-tap"                   : "^1.0.1",
-		"tape"                       : "^4.8.0"
+		"build-gc"  : "^0.1.1",
+		"build-gbu" : "^0.1.0",
+		"tape"      : "^4.8.0"
 	},
 	"jspm"            : {
 		"main" : "dist/ronion.browser.js"
