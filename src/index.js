@@ -327,7 +327,7 @@
      * @param {!Uint8Array}	packet_data
      */,
     _process_packet_data_plaintext: function(address, segment_id, packet_data){
-      var source_id, ref$, command, command_data, pending_segment_data, original_source;
+      var source_id, ref$, command, command_data, pending_segment_data, original_source, original_address, original_segment_id;
       source_id = compute_source_id(address, segment_id);
       ref$ = parse_packet_data(packet_data), command = ref$[0], command_data = ref$[1];
       switch (command) {
@@ -340,9 +340,10 @@
           return;
         }
         pending_segment_data = this._pending_segments.get(source_id);
-        if (pending_segment_data.original_source) {
-          original_source = pending_segment_data.original_source;
-          this._extend_response(original_source.address, original_source.segment_id, command_data);
+        original_source = pending_segment_data.original_source;
+        if (original_source) {
+          original_address = original_source[0], original_segment_id = original_source[1];
+          this._extend_response(original_address, original_segment_id, command_data);
         } else {
           this.fire('create_response', address, segment_id, command_data);
         }
@@ -372,10 +373,7 @@
               next_node_address = command_data.subarray(0, this$._address_length);
               segment_creation_request_data = command_data.subarray(this$._address_length);
               next_node_segment_id = this$.create_request(next_node_address, segment_creation_request_data);
-              original_source = {
-                address: address,
-                segment_id: segment_id
-              };
+              original_source = [address, segment_id];
               forward_to = [next_node_address, next_node_segment_id];
               this$._mark_segment_as_pending(address, segment_id, {
                 forward_to: forward_to
@@ -404,13 +402,14 @@
             this$.fire('data', address, segment_id, result['target_address'], command - CUSTOM_COMMANDS_OFFSET, command_data);
           }
         }, function(){
-          var pending_segment_data, ref$, next_node_address, next_node_segment_id;
+          var pending_segment_data, forward_to, next_node_address, next_node_segment_id;
           if (this$._segments_forwarding_mapping.has(source_id)) {
             this$._forward_packet_data(source_id, packet_data_encrypted_rewrapped);
           } else if (this$._pending_segments.has(source_id)) {
             pending_segment_data = this$._pending_segments.get(source_id);
-            if (pending_segment_data.forward_to) {
-              ref$ = pending_segment_data.forward_to, next_node_address = ref$[0], next_node_segment_id = ref$[1];
+            forward_to = pending_segment_data.forward_to;
+            if (forward_to) {
+              next_node_address = forward_to[0], next_node_segment_id = forward_to[1];
               this$._unmark_segment_as_pending(address, segment_id);
               this$._unmark_segment_as_pending(next_node_address, next_node_segment_id);
               if (this$._add_segments_forwarding_mapping(address, segment_id, next_node_address, next_node_segment_id)) {

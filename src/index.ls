@@ -317,10 +317,11 @@ Ronion:: =
 				if !@_pending_segments.has(source_id)
 					return
 				pending_segment_data	= @_pending_segments.get(source_id)
-				if pending_segment_data.original_source
+				original_source			= pending_segment_data.original_source
+				if original_source
 					# This is response from the node we've forwarded CREATE_REQUEST to, which originated from initiator, so let's wrap it in EXTEND_RESPONSE
-					original_source	= pending_segment_data.original_source
-					@_extend_response(original_source.address, original_source.segment_id, command_data)
+					[original_address, original_segment_id]	= original_source
+					@_extend_response(original_address, original_segment_id, command_data)
 				else
 					# After at least one create_response event received routing path segment should be considered half-established and destroy() should be called
 					# in order to drop half-established routing path segment
@@ -349,7 +350,7 @@ Ronion:: =
 									next_node_address				= command_data.subarray(0, @_address_length)
 									segment_creation_request_data	= command_data.subarray(@_address_length)
 									next_node_segment_id			= @create_request(next_node_address, segment_creation_request_data)
-									original_source					= {address, segment_id}
+									original_source					= [address, segment_id]
 									forward_to						= [next_node_address, next_node_segment_id]
 									# Segment will be marked as pending in `create_request()` call, but here we override it with additional data
 									# Segment to the next node is not added to forwarding until source sends data this node can't decrypt
@@ -375,10 +376,11 @@ Ronion:: =
 							# Now we've got packet on incoming segment, which is pending at the same time
 							# This can mean that segment was used to extend routing path to the next node (in which case there should be `forward_to`)
 							pending_segment_data	= @_pending_segments.get(source_id)
-							if pending_segment_data.forward_to
+							forward_to				= pending_segment_data.forward_to
+							if forward_to
 								# Since we can't decrypt the packet, this means that the extension succeeded and initiator sends encrypted messages to that node
 								# We can now forwarding mapping for segments
-								[next_node_address, next_node_segment_id]	= pending_segment_data.forward_to
+								[next_node_address, next_node_segment_id]	= forward_to
 								@_unmark_segment_as_pending(address, segment_id)
 								@_unmark_segment_as_pending(next_node_address, next_node_segment_id)
 								if @_add_segments_forwarding_mapping(address, segment_id, next_node_address, next_node_segment_id)
