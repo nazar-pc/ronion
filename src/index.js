@@ -443,7 +443,7 @@
         i = i$;
         segment_id = number_to_uint_array(i);
         source_id = compute_source_id(address, segment_id);
-        if (!this._outgoing_established_segments.has(source_id) && !this._pending_segments.has(source_id) && !this._incoming_established_segments.has(source_id)) {
+        if (!(this._outgoing_established_segments.has(source_id) || this._pending_segments.has(source_id) || this._incoming_established_segments.has(source_id) || this._segments_forwarding_mapping.has(source_id))) {
           return segment_id;
         }
       }

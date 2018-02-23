@@ -406,7 +406,12 @@ Ronion:: =
 		for i from 0 til 2**16
 			segment_id	= number_to_uint_array(i)
 			source_id	= compute_source_id(address, segment_id)
-			if !@_outgoing_established_segments.has(source_id) && !@_pending_segments.has(source_id) && !@_incoming_established_segments.has(source_id)
+			if !(
+				@_outgoing_established_segments.has(source_id) ||
+				@_pending_segments.has(source_id) ||
+				@_incoming_established_segments.has(source_id) ||
+				@_segments_forwarding_mapping.has(source_id)
+			)
 				return segment_id
 		throw new RangeError('Out of possible segment IDs')
 	/**
