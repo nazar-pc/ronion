@@ -27,7 +27,7 @@
 		"build" : "gulp build"
 	},
 	"dependencies"    : {
-		"async-eventer" : "^1.1.4"
+		"async-eventer" : "^1.1.5"
 	},
 	"devDependencies" : {
 		"build-gc"  : "^0.1.1",
