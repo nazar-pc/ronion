@@ -22,7 +22,9 @@
    * @return {number}
    */
   function uint_array_to_number(array){
-    return array[0] * 256 + array[1];
+    var view;
+    view = new DataView(array.buffer, array.byteOffset, array.byteLength);
+    return view.getUint16(0, false);
   }
   /**
    * @param {number} number
@@ -30,10 +32,11 @@
    * @return {!Uint8Array}
    */
   function number_to_uint_array(number){
-    var lsb, msb;
-    lsb = number % 256;
-    msb = (number - lsb) / 256;
-    return Uint8Array.of(msb, lsb);
+    var array, view;
+    array = new Uint8Array(2);
+    view = new DataView(array.buffer);
+    view.setUint16(0, number, false);
+    return array;
   }
   /**
    * @param {!Uint8Array} packet

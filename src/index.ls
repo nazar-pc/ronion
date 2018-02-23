@@ -22,7 +22,8 @@ const CUSTOM_COMMANDS_OFFSET	= 10 # 5..9 are also reserved for future use, every
  * @return {number}
  */
 function uint_array_to_number (array)
-	array[0] * 256 + array[1]
+	view	= new DataView(array.buffer, array.byteOffset, array.byteLength)
+	view.getUint16(0, false)
 
 /**
  * @param {number} number
@@ -30,9 +31,10 @@ function uint_array_to_number (array)
  * @return {!Uint8Array}
  */
 function number_to_uint_array (number)
-	lsb	= number % 256
-	msb	= (number - lsb) / 256
-	Uint8Array.of(msb, lsb)
+	array	= new Uint8Array(2)
+	view	= new DataView(array.buffer)
+	view.setUint16(0, number, false)
+	array
 
 /**
  * @param {!Uint8Array} packet
