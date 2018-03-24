@@ -9,6 +9,7 @@ var global = {};
  * @param {*} [wrapper]
  */
 var define = function (dependencies, wrapper) {};
+define.amd = {};
 /**
  * @param {string} module
  */
