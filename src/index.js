@@ -8,9 +8,7 @@
   /*
    * Implements version 0.8.0 of the specification
    */
-  var asyncEventer, COMMAND_CREATE_REQUEST, COMMAND_CREATE_RESPONSE, COMMAND_EXTEND_REQUEST, COMMAND_EXTEND_RESPONSE, CUSTOM_COMMANDS_OFFSET;
-  asyncEventer = require('async-eventer');
-  module.exports = Ronion;
+  var COMMAND_CREATE_REQUEST, COMMAND_CREATE_RESPONSE, COMMAND_EXTEND_REQUEST, COMMAND_EXTEND_RESPONSE, CUSTOM_COMMANDS_OFFSET;
   COMMAND_CREATE_REQUEST = 0;
   COMMAND_CREATE_RESPONSE = 1;
   COMMAND_EXTEND_REQUEST = 2;
@@ -100,633 +98,652 @@
       return console.error(error);
     }
   }
-  /**
-   * @constructor
-   * @extends {Eventer}
-   *
-   * @param {number}	packet_size				Packets will always have exactly this size
-   * @param {number}	address_length			Length of the node address
-   * @param {number}	mac_length				Length of the MAC that is added to ciphertext during encryption
-   * @param {number}	[max_pending_segments]	How much segments can be in pending state per one address
-   */
-  function Ronion(packet_size, address_length, mac_length, max_pending_segments){
-    max_pending_segments == null && (max_pending_segments = 10);
-    if (!(this instanceof Ronion)) {
-      return new Ronion(packet_size, address_length, mac_length, max_pending_segments);
-    }
-    asyncEventer.call(this);
+  function Wrapper(asyncEventer){
     /**
-     * Routing path segments naming:
-     * initiator [outgoing segment] -> [incoming segment] middle node #1 -> [incoming segment] middle node #2 -> [incoming segment] -> responder
+     * @constructor
+     *
+     * @param {number}	packet_size				Packets will always have exactly this size
+     * @param {number}	address_length			Length of the node address
+     * @param {number}	mac_length				Length of the MAC that is added to ciphertext during encryption
+     * @param {number}	[max_pending_segments]	How much segments can be in pending state per one address
      */
-    this._packet_size = packet_size;
-    this._address_length = address_length;
-    this._mac_length = mac_length;
-    this._max_pending_segments = max_pending_segments;
-    this._outgoing_established_segments = new Map;
-    this._incoming_established_segments = new Set;
-    this._pending_segments = new Map;
-    this._pending_address_segments = new Map;
-    this._pending_extensions = new Map;
-    this._segments_forwarding_mapping = new Map;
-  }
-  Ronion.prototype = {
-    /**
-     * Must be called when new packet appear
-     *
-     * @param {!Uint8Array}	address	Address (in application-specific format) where packet came from
-     * @param {!Uint8Array}	packet	Packet
-     */
-    'process_packet': function(address, packet){
-      var ref$, segment_id, packet_data, source_id;
-      if (packet.length !== this._packet_size) {
-        return;
+    function Ronion(packet_size, address_length, mac_length, max_pending_segments){
+      max_pending_segments == null && (max_pending_segments = 10);
+      if (!(this instanceof Ronion)) {
+        return new Ronion(packet_size, address_length, mac_length, max_pending_segments);
       }
-      ref$ = parse_packet(packet), segment_id = ref$[0], packet_data = ref$[1];
-      this.fire('activity', address, segment_id);
-      source_id = compute_source_id(address, segment_id);
-      if (this._outgoing_established_segments.has(source_id) || this._incoming_established_segments.has(source_id) || this._segments_forwarding_mapping.has(source_id)) {
-        this._process_packet_data_encrypted(address, segment_id, packet_data);
-      } else {
-        this._process_packet_data_plaintext(address, segment_id, packet_data);
+      asyncEventer.call(this);
+      /**
+       * Routing path segments naming:
+       * initiator [outgoing segment] -> [incoming segment] middle node #1 -> [incoming segment] middle node #2 -> [incoming segment] -> responder
+       */
+      this._packet_size = packet_size;
+      this._address_length = address_length;
+      this._mac_length = mac_length;
+      this._max_pending_segments = max_pending_segments;
+      this._outgoing_established_segments = new Map;
+      this._incoming_established_segments = new Set;
+      this._pending_segments = new Map;
+      this._pending_address_segments = new Map;
+      this._pending_extensions = new Map;
+      this._segments_forwarding_mapping = new Map;
+    }
+    Ronion.prototype = {
+      /**
+       * Must be called when new packet appear
+       *
+       * @param {!Uint8Array}	address	Address (in application-specific format) where packet came from
+       * @param {!Uint8Array}	packet	Packet
+       */
+      process_packet: function(address, packet){
+        var ref$, segment_id, packet_data, source_id;
+        if (packet.length !== this._packet_size) {
+          return;
+        }
+        ref$ = parse_packet(packet), segment_id = ref$[0], packet_data = ref$[1];
+        this.fire('activity', address, segment_id);
+        source_id = compute_source_id(address, segment_id);
+        if (this._outgoing_established_segments.has(source_id) || this._incoming_established_segments.has(source_id) || this._segments_forwarding_mapping.has(source_id)) {
+          this._process_packet_data_encrypted(address, segment_id, packet_data);
+        } else {
+          this._process_packet_data_plaintext(address, segment_id, packet_data);
+        }
       }
-    }
-    /**
-     * Must be called when new segment is established with node that has specified address (after sending CREATE_REQUEST and receiving CREATE_RESPONSE)
-     *
-     * @param {!Uint8Array}	address
-     * @param {!Uint8Array}	segment_id
-     */,
-    'confirm_outgoing_segment_established': function(address, segment_id){
-      var source_id;
-      source_id = compute_source_id(address, segment_id);
-      this._outgoing_established_segments.set(source_id, [address]);
-      this._unmark_segment_as_pending(address, segment_id);
-    }
-    /**
-     * Must be called when new segment is established with node that has specified address (after receiving CREATE_REQUEST and sending CREATE_RESPONSE)
-     *
-     * @param {!Uint8Array}	address
-     * @param {!Uint8Array}	segment_id
-     */,
-    'confirm_incoming_segment_established': function(address, segment_id){
-      var source_id;
-      source_id = compute_source_id(address, segment_id);
-      this._incoming_established_segments.add(source_id);
-      this._unmark_segment_as_pending(address, segment_id);
-    }
-    /**
-     * Must be called when routing path is extended by one more segment
-     *
-     * @param {!Uint8Array}	address		Node at which to start routing path
-     * @param {!Uint8Array}	segment_id	Same segment ID as in CREATE_REQUEST
-     */,
-    'confirm_extended_path': function(address, segment_id){
-      var source_id, next_node_address;
-      source_id = compute_source_id(address, segment_id);
-      next_node_address = this._pending_extensions.get(source_id);
-      this._outgoing_established_segments.get(source_id).push(next_node_address);
-      this._pending_extensions['delete'](source_id);
-    }
-    /**
-     * Must be called in order to create new routing path that starts with specified address and segment ID, sends CREATE_REQUEST
-     *
-     * @param {!Uint8Array}	address			Node at which to start routing path
-     * @param {!Uint8Array}	command_data
-     *
-     * @return {!Uint8Array} segment_id Generated segment ID that can be later used for routing path extension
-     *
-     * @throws {RangeError}
-     */,
-    'create_request': function(address, command_data){
-      var segment_id, packet;
-      if (command_data.length > this.get_max_command_data_length()) {
-        throw new RangeError('Too much command data');
+      /**
+       * Must be called when new segment is established with node that has specified address (after sending CREATE_REQUEST and receiving CREATE_RESPONSE)
+       *
+       * @param {!Uint8Array}	address
+       * @param {!Uint8Array}	segment_id
+       */,
+      confirm_outgoing_segment_established: function(address, segment_id){
+        var source_id;
+        source_id = compute_source_id(address, segment_id);
+        this._outgoing_established_segments.set(source_id, [address]);
+        this._unmark_segment_as_pending(address, segment_id);
       }
-      segment_id = this._generate_segment_id(address);
-      packet = this._generate_packet_plaintext(segment_id, COMMAND_CREATE_REQUEST, command_data);
-      this._send(address, segment_id, packet);
-      this._mark_segment_as_pending(address, segment_id);
-      return segment_id;
-    }
-    /**
-     * Must be called in order to respond to CREATE_RESPONSE
-     *
-     * @param {!Uint8Array}	address			Node from which CREATE_REQUEST come from
-     * @param {!Uint8Array}	segment_id		Same segment ID as in CREATE_REQUEST
-     * @param {!Uint8Array}	command_data
-     *
-     * @throws {RangeError}
-     */,
-    'create_response': function(address, segment_id, command_data){
-      var packet;
-      if (command_data.length > this.get_max_command_data_length()) {
-        throw new RangeError('Too much command data');
+      /**
+       * Must be called when new segment is established with node that has specified address (after receiving CREATE_REQUEST and sending CREATE_RESPONSE)
+       *
+       * @param {!Uint8Array}	address
+       * @param {!Uint8Array}	segment_id
+       */,
+      confirm_incoming_segment_established: function(address, segment_id){
+        var source_id;
+        source_id = compute_source_id(address, segment_id);
+        this._incoming_established_segments.add(source_id);
+        this._unmark_segment_as_pending(address, segment_id);
       }
-      packet = this._generate_packet_plaintext(segment_id, COMMAND_CREATE_RESPONSE, command_data);
-      this._send(address, segment_id, packet);
-    }
-    /**
-     * Must be called in order to extend routing path that starts with specified address and segment ID by one more segment, sends EXTEND_REQUEST
-     *
-     * @param {!Uint8Array}	address				Node at which routing path has started
-     * @param {!Uint8Array}	segment_id			Same segment ID as returned by CREATE_REQUEST
-     * @param {!Uint8Array}	next_node_address	Node to which routing path will be extended from current last node, will be prepended to `command_data`
-     * @param {!Uint8Array}	command_data		Subtract address length from max command data length, since `next_node_address` will be prepended
-     *
-     * @throws {RangeError}
-     * @throws {ReferenceError}
-     */,
-    'extend_request': function(address, segment_id, next_node_address, command_data){
-      var source_id, target_address, x$, command_data_full, this$ = this;
-      source_id = compute_source_id(address, segment_id);
-      if (!this._outgoing_established_segments.has(source_id)) {
-        throw new ReferenceError('There is no such segment established');
+      /**
+       * Must be called when routing path is extended by one more segment
+       *
+       * @param {!Uint8Array}	address		Node at which to start routing path
+       * @param {!Uint8Array}	segment_id	Same segment ID as in CREATE_REQUEST
+       */,
+      confirm_extended_path: function(address, segment_id){
+        var source_id, next_node_address;
+        source_id = compute_source_id(address, segment_id);
+        next_node_address = this._pending_extensions.get(source_id);
+        this._outgoing_established_segments.get(source_id).push(next_node_address);
+        this._pending_extensions['delete'](source_id);
       }
-      if (command_data.length > this.get_max_command_data_length() - this._address_length) {
-        throw new RangeError('Too much command data');
-      }
-      target_address = this._outgoing_established_segments.get(source_id).slice(-1)[0];
-      x$ = command_data_full = new Uint8Array(next_node_address.length + command_data.length);
-      x$.set(next_node_address);
-      x$.set(command_data, next_node_address.length);
-      this._generate_packet_encrypted(address, segment_id, target_address, COMMAND_EXTEND_REQUEST, command_data_full).then(function(packet){
-        this$._send(address, segment_id, packet);
-        this$._pending_extensions.set(source_id, next_node_address);
-      })['catch'](error_handler);
-    }
-    /**
-     * @param {!Uint8Array}	address
-     * @param {!Uint8Array}	segment_id
-     * @param {!Uint8Array}	command_data
-     */,
-    _extend_response: function(address, segment_id, command_data){
-      var this$ = this;
-      this._generate_packet_encrypted(address, segment_id, address, COMMAND_EXTEND_RESPONSE, command_data).then(function(packet){
-        this$._send(address, segment_id, packet);
-      })['catch'](error_handler);
-    }
-    /**
-     * Removes any mapping that uses specified address and segment ID, considers connection to be destroyed
-     *
-     * @param {!Uint8Array}	address		Node at which routing path has started
-     * @param {!Uint8Array}	segment_id	Same segment ID as returned by CREATE_REQUEST
-     */,
-    'destroy': function(address, segment_id){
-      var source_id, ref$, address2, segment_id2;
-      source_id = compute_source_id(address, segment_id);
-      this._outgoing_established_segments['delete'](source_id);
-      this._incoming_established_segments['delete'](source_id);
-      this._pending_extensions['delete'](source_id);
-      this._unmark_segment_as_pending(address, segment_id);
-      if (this._segments_forwarding_mapping.has(source_id)) {
-        ref$ = this._segments_forwarding_mapping.get(source_id), address2 = ref$[0], segment_id2 = ref$[1];
-        this._del_segments_forwarding_mapping(address, segment_id);
-        this['destroy'](address2, segment_id2);
-      } else {
-        this._del_segments_forwarding_mapping(address, segment_id);
-      }
-    }
-    /**
-     * Must be called in order to send data to the node in routing path that starts with specified address and segment ID, sends DATA
-     *
-     * @param {!Uint8Array}	address			Node at which routing path has started
-     * @param {!Uint8Array}	segment_id		Same segment ID as returned by CREATE_REQUEST
-     * @param {!Uint8Array}	target_address	Node to which data should be sent, in case of sending data back to the initiator is the same as `address`
-     * @param {number}		command			Command number from range `0..245`
-     * @param {!Uint8Array}	command_data
-     *
-     * @throws {RangeError}
-     * @throws {ReferenceError}
-     */,
-    'data': function(address, segment_id, target_address, command, command_data){
-      var source_id, this$ = this;
-      source_id = compute_source_id(address, segment_id);
-      if (!this._outgoing_established_segments.has(source_id) && !this._incoming_established_segments.has(source_id)) {
-        throw new ReferenceError('There is no such segment established');
-      }
-      if (command_data.length > this.get_max_command_data_length()) {
-        throw new RangeError('Too much command data');
-      }
-      this._generate_packet_encrypted(address, segment_id, target_address, command + CUSTOM_COMMANDS_OFFSET, command_data).then(function(packet){
-        this$._send(address, segment_id, packet);
-      })['catch'](error_handler);
-    }
-    /**
-     * Convenient method for knowing how much command data can be sent in one packet
-     *
-     * @return {number}
-     */,
-    'get_max_command_data_length': function(){
-      return this._packet_size - 2 - 1 - 2 - this._mac_length;
-    },
-    _send: function(address, segment_id, packet){
-      this.fire('activity', address, segment_id);
-      return this.fire('send', address, packet);
-    }
-    /**
-     * @param {!Uint8Array}	address
-     * @param {!Uint8Array}	segment_id
-     * @param {!Uint8Array}	packet_data
-     */,
-    _process_packet_data_plaintext: function(address, segment_id, packet_data){
-      var source_id, ref$, command, command_data, pending_segment_data, original_source, original_address, original_segment_id;
-      source_id = compute_source_id(address, segment_id);
-      ref$ = parse_packet_data(packet_data), command = ref$[0], command_data = ref$[1];
-      switch (command) {
-      case COMMAND_CREATE_REQUEST:
+      /**
+       * Must be called in order to create new routing path that starts with specified address and segment ID, sends CREATE_REQUEST
+       *
+       * @param {!Uint8Array}	address			Node at which to start routing path
+       * @param {!Uint8Array}	command_data
+       *
+       * @return {!Uint8Array} segment_id Generated segment ID that can be later used for routing path extension
+       *
+       * @throws {RangeError}
+       */,
+      create_request: function(address, command_data){
+        var segment_id, packet;
+        if (command_data.length > this.get_max_command_data_length()) {
+          throw new RangeError('Too much command data');
+        }
+        segment_id = this._generate_segment_id(address);
+        packet = this._generate_packet_plaintext(segment_id, COMMAND_CREATE_REQUEST, command_data);
+        this._send(address, segment_id, packet);
         this._mark_segment_as_pending(address, segment_id);
-        this.fire('create_request', address, segment_id, command_data);
-        break;
-      case COMMAND_CREATE_RESPONSE:
+        return segment_id;
+      }
+      /**
+       * Must be called in order to respond to CREATE_RESPONSE
+       *
+       * @param {!Uint8Array}	address			Node from which CREATE_REQUEST come from
+       * @param {!Uint8Array}	segment_id		Same segment ID as in CREATE_REQUEST
+       * @param {!Uint8Array}	command_data
+       *
+       * @throws {RangeError}
+       */,
+      create_response: function(address, segment_id, command_data){
+        var packet;
+        if (command_data.length > this.get_max_command_data_length()) {
+          throw new RangeError('Too much command data');
+        }
+        packet = this._generate_packet_plaintext(segment_id, COMMAND_CREATE_RESPONSE, command_data);
+        this._send(address, segment_id, packet);
+      }
+      /**
+       * Must be called in order to extend routing path that starts with specified address and segment ID by one more segment, sends EXTEND_REQUEST
+       *
+       * @param {!Uint8Array}	address				Node at which routing path has started
+       * @param {!Uint8Array}	segment_id			Same segment ID as returned by CREATE_REQUEST
+       * @param {!Uint8Array}	next_node_address	Node to which routing path will be extended from current last node, will be prepended to `command_data`
+       * @param {!Uint8Array}	command_data		Subtract address length from max command data length, since `next_node_address` will be prepended
+       *
+       * @throws {RangeError}
+       * @throws {ReferenceError}
+       */,
+      extend_request: function(address, segment_id, next_node_address, command_data){
+        var source_id, target_address, x$, command_data_full, this$ = this;
+        source_id = compute_source_id(address, segment_id);
+        if (!this._outgoing_established_segments.has(source_id)) {
+          throw new ReferenceError('There is no such segment established');
+        }
+        if (command_data.length > this.get_max_command_data_length() - this._address_length) {
+          throw new RangeError('Too much command data');
+        }
+        target_address = this._outgoing_established_segments.get(source_id).slice(-1)[0];
+        x$ = command_data_full = new Uint8Array(next_node_address.length + command_data.length);
+        x$.set(next_node_address);
+        x$.set(command_data, next_node_address.length);
+        this._generate_packet_encrypted(address, segment_id, target_address, COMMAND_EXTEND_REQUEST, command_data_full).then(function(packet){
+          this$._send(address, segment_id, packet);
+          this$._pending_extensions.set(source_id, next_node_address);
+        })['catch'](error_handler);
+      }
+      /**
+       * @param {!Uint8Array}	address
+       * @param {!Uint8Array}	segment_id
+       * @param {!Uint8Array}	command_data
+       */,
+      _extend_response: function(address, segment_id, command_data){
+        var this$ = this;
+        this._generate_packet_encrypted(address, segment_id, address, COMMAND_EXTEND_RESPONSE, command_data).then(function(packet){
+          this$._send(address, segment_id, packet);
+        })['catch'](error_handler);
+      }
+      /**
+       * Removes any mapping that uses specified address and segment ID, considers connection to be destroyed
+       *
+       * @param {!Uint8Array}	address		Node at which routing path has started
+       * @param {!Uint8Array}	segment_id	Same segment ID as returned by CREATE_REQUEST
+       */,
+      destroy: function(address, segment_id){
+        var source_id, ref$, address2, segment_id2;
+        source_id = compute_source_id(address, segment_id);
+        this._outgoing_established_segments['delete'](source_id);
+        this._incoming_established_segments['delete'](source_id);
+        this._pending_extensions['delete'](source_id);
+        this._unmark_segment_as_pending(address, segment_id);
+        if (this._segments_forwarding_mapping.has(source_id)) {
+          ref$ = this._segments_forwarding_mapping.get(source_id), address2 = ref$[0], segment_id2 = ref$[1];
+          this._del_segments_forwarding_mapping(address, segment_id);
+          this.destroy(address2, segment_id2);
+        } else {
+          this._del_segments_forwarding_mapping(address, segment_id);
+        }
+      }
+      /**
+       * Must be called in order to send data to the node in routing path that starts with specified address and segment ID, sends DATA
+       *
+       * @param {!Uint8Array}	address			Node at which routing path has started
+       * @param {!Uint8Array}	segment_id		Same segment ID as returned by CREATE_REQUEST
+       * @param {!Uint8Array}	target_address	Node to which data should be sent, in case of sending data back to the initiator is the same as `address`
+       * @param {number}		command			Command number from range `0..245`
+       * @param {!Uint8Array}	command_data
+       *
+       * @throws {RangeError}
+       * @throws {ReferenceError}
+       */,
+      data: function(address, segment_id, target_address, command, command_data){
+        var source_id, this$ = this;
+        source_id = compute_source_id(address, segment_id);
+        if (!this._outgoing_established_segments.has(source_id) && !this._incoming_established_segments.has(source_id)) {
+          throw new ReferenceError('There is no such segment established');
+        }
+        if (command_data.length > this.get_max_command_data_length()) {
+          throw new RangeError('Too much command data');
+        }
+        this._generate_packet_encrypted(address, segment_id, target_address, command + CUSTOM_COMMANDS_OFFSET, command_data).then(function(packet){
+          this$._send(address, segment_id, packet);
+        })['catch'](error_handler);
+      }
+      /**
+       * Convenient method for knowing how much command data can be sent in one packet
+       *
+       * @return {number}
+       */,
+      get_max_command_data_length: function(){
+        return this._packet_size - 2 - 1 - 2 - this._mac_length;
+      },
+      _send: function(address, segment_id, packet){
+        this.fire('activity', address, segment_id);
+        return this.fire('send', address, packet);
+      }
+      /**
+       * @param {!Uint8Array}	address
+       * @param {!Uint8Array}	segment_id
+       * @param {!Uint8Array}	packet_data
+       */,
+      _process_packet_data_plaintext: function(address, segment_id, packet_data){
+        var source_id, ref$, command, command_data, pending_segment_data, original_source, original_address, original_segment_id;
+        source_id = compute_source_id(address, segment_id);
+        ref$ = parse_packet_data(packet_data), command = ref$[0], command_data = ref$[1];
+        switch (command) {
+        case COMMAND_CREATE_REQUEST:
+          this._mark_segment_as_pending(address, segment_id);
+          this.fire('create_request', address, segment_id, command_data);
+          break;
+        case COMMAND_CREATE_RESPONSE:
+          if (!this._pending_segments.has(source_id)) {
+            return;
+          }
+          pending_segment_data = this._pending_segments.get(source_id);
+          original_source = pending_segment_data.original_source;
+          if (original_source) {
+            original_address = original_source[0], original_segment_id = original_source[1];
+            this._extend_response(original_address, original_segment_id, command_data);
+          } else {
+            this.fire('create_response', address, segment_id, command_data);
+          }
+        }
+      }
+      /**
+       * @param {!Uint8Array}	address
+       * @param {!Uint8Array}	segment_id
+       * @param {!Uint8Array}	packet_data_encrypted
+       */,
+      _process_packet_data_encrypted: function(address, segment_id, packet_data_encrypted){
+        var this$ = this;
+        this._rewrap(address, segment_id, packet_data_encrypted).then(function(packet_data_encrypted_rewrapped){
+          var source_id;
+          source_id = compute_source_id(address, segment_id);
+          if (!this$._incoming_established_segments.has(source_id) && this$._segments_forwarding_mapping.has(source_id)) {
+            this$._forward_packet_data(source_id, packet_data_encrypted_rewrapped);
+            return;
+          }
+          this$._decrypt_and_unwrap(address, segment_id, packet_data_encrypted_rewrapped).then(function(result){
+            var packet_data, ref$, command, command_data, next_node_address, segment_creation_request_data, next_node_segment_id, original_source, forward_to, e;
+            packet_data = result['plaintext'];
+            ref$ = parse_packet_data(packet_data), command = ref$[0], command_data = ref$[1];
+            switch (command) {
+            case COMMAND_EXTEND_REQUEST:
+              try {
+                next_node_address = command_data.subarray(0, this$._address_length);
+                segment_creation_request_data = command_data.subarray(this$._address_length);
+                next_node_segment_id = this$.create_request(next_node_address, segment_creation_request_data);
+                original_source = [address, segment_id];
+                forward_to = [next_node_address, next_node_segment_id];
+                this$._mark_segment_as_pending(address, segment_id, {
+                  forward_to: forward_to
+                });
+                this$._mark_segment_as_pending(next_node_address, next_node_segment_id, {
+                  original_source: original_source
+                });
+              } catch (e$) {
+                e = e$;
+                if (!(e instanceof RangeError)) {
+                  throw e;
+                }
+                this$._extend_response(address, segment_id, new Uint8Array(0));
+                return;
+              }
+              break;
+            case COMMAND_EXTEND_RESPONSE:
+              if (this$._pending_extensions.has(source_id)) {
+                this$.fire('extend_response', address, segment_id, command_data);
+              }
+              break;
+            default:
+              if (command < CUSTOM_COMMANDS_OFFSET) {
+                return;
+              }
+              this$.fire('data', address, segment_id, result['target_address'], command - CUSTOM_COMMANDS_OFFSET, command_data);
+            }
+          }, function(){
+            var pending_segment_data, forward_to, next_node_address, next_node_segment_id;
+            if (this$._segments_forwarding_mapping.has(source_id)) {
+              this$._forward_packet_data(source_id, packet_data_encrypted_rewrapped);
+            } else if (this$._pending_segments.has(source_id)) {
+              pending_segment_data = this$._pending_segments.get(source_id);
+              forward_to = pending_segment_data.forward_to;
+              if (forward_to) {
+                next_node_address = forward_to[0], next_node_segment_id = forward_to[1];
+                this$._unmark_segment_as_pending(address, segment_id);
+                this$._unmark_segment_as_pending(next_node_address, next_node_segment_id);
+                if (this$._add_segments_forwarding_mapping(address, segment_id, next_node_address, next_node_segment_id)) {
+                  this$._forward_packet_data(source_id, packet_data_encrypted_rewrapped);
+                }
+              }
+            }
+          });
+        })['catch'](error_handler);
+      }
+      /**
+       * @param {string}		source_id
+       * @param {!Uint8Array}	packet_data_encrypted
+       */,
+      _forward_packet_data: function(source_id, packet_data_encrypted){
+        var ref$, address, segment_id, packet;
+        ref$ = this._segments_forwarding_mapping.get(source_id), address = ref$[0], segment_id = ref$[1];
+        packet = generate_packet(this._packet_size, segment_id, packet_data_encrypted);
+        this._send(address, segment_id, packet);
+      }
+      /**
+       * @param {!Uint8Array} address
+       *
+       * @return {!Uint8Array}
+       *
+       * @throws {RangeError}
+       */,
+      _generate_segment_id: function(address){
+        var i$, to$, i, segment_id, source_id;
+        for (i$ = 0, to$ = Math.pow(2, 16); i$ < to$; ++i$) {
+          i = i$;
+          segment_id = number_to_uint_array(i);
+          source_id = compute_source_id(address, segment_id);
+          if (!(this._outgoing_established_segments.has(source_id) || this._pending_segments.has(source_id) || this._incoming_established_segments.has(source_id) || this._segments_forwarding_mapping.has(source_id))) {
+            return segment_id;
+          }
+        }
+        throw new RangeError('Out of possible segment IDs');
+      }
+      /**
+       * @param {!Uint8Array}	segment_id
+       * @param {number}		command
+       * @param {!Uint8Array}	command_data
+       *
+       * @return {!Uint8Array}
+       */,
+      _generate_packet_plaintext: function(segment_id, command, command_data){
+        var packet_data;
+        packet_data = generate_packet_data(command, command_data, this.get_max_command_data_length());
+        return generate_packet(this._packet_size, segment_id, packet_data);
+      }
+      /**
+       * @param {!Uint8Array}	address
+       * @param {!Uint8Array}	segment_id
+       * @param {!Uint8Array}	target_address
+       * @param {number}		command
+       * @param {!Uint8Array}	command_data
+       *
+       * @return {!Promise} Resolves with Uint8Array packet
+       */,
+      _generate_packet_encrypted: function(address, segment_id, target_address, command, command_data){
+        var packet_data, this$ = this;
+        packet_data = generate_packet_data(command, command_data, this.get_max_command_data_length());
+        return this._encrypt_and_wrap(address, segment_id, target_address, packet_data).then(function(packet_data_encrypted){
+          return generate_packet(this$._packet_size, segment_id, packet_data_encrypted);
+        });
+      }
+      /**
+       * @param {!Uint8Array}	address1
+       * @param {!Uint8Array}	segment_id1
+       * @param {!Uint8Array}	address2
+       * @param {!Uint8Array}	segment_id2
+       */,
+      _add_segments_forwarding_mapping: function(address1, segment_id1, address2, segment_id2){
+        var source_id1, source_id2;
+        source_id1 = compute_source_id(address1, segment_id1);
+        source_id2 = compute_source_id(address2, segment_id2);
+        if (this._segments_forwarding_mapping.has(source_id1) || this._segments_forwarding_mapping.has(source_id2)) {
+          return false;
+        }
+        this._segments_forwarding_mapping.set(source_id1, [address2, segment_id2]);
+        this._segments_forwarding_mapping.set(source_id2, [address1, segment_id1]);
+        return true;
+      }
+      /**
+       * @param {!Uint8Array}	address
+       * @param {!Uint8Array}	segment_id
+       */,
+      _del_segments_forwarding_mapping: function(address, segment_id){
+        var source_id1, ref$, address2, segment_id2, source_id2;
+        source_id1 = compute_source_id(address, segment_id);
+        if (this._segments_forwarding_mapping.has(source_id1)) {
+          ref$ = this._segments_forwarding_mapping.get(source_id1), address2 = ref$[0], segment_id2 = ref$[1];
+          source_id2 = compute_source_id(address2, segment_id2);
+          this._segments_forwarding_mapping['delete'](source_id1);
+          this._segments_forwarding_mapping['delete'](source_id2);
+        }
+      }
+      /**
+       * @param {!Uint8Array}	address
+       * @param {!Uint8Array}	segment_id
+       * @param {!Object}		[data]
+       */,
+      _mark_segment_as_pending: function(address, segment_id, data){
+        var source_id, address_string, pending_address_segments, old_pending_segment_id;
+        data == null && (data = {});
+        this._unmark_segment_as_pending(address, segment_id);
+        source_id = compute_source_id(address, segment_id);
+        address_string = address.join('');
+        this._pending_segments.set(source_id, data);
+        if (!this._pending_address_segments.has(address_string)) {
+          this._pending_address_segments.set(address_string, []);
+        }
+        pending_address_segments = this._pending_address_segments.get(address_string);
+        pending_address_segments.push(segment_id);
+        if (pending_address_segments.length > this._max_pending_segments) {
+          old_pending_segment_id = pending_address_segments.shift();
+          this._unmark_segment_as_pending(address, old_pending_segment_id);
+        }
+      }
+      /**
+       * @param {!Uint8Array}	address
+       * @param {!Uint8Array}	segment_id
+       */,
+      _unmark_segment_as_pending: function(address, segment_id){
+        var source_id, address_string, segment_id_string, pending_address_segments, i$, len$, i, existing_segment_id;
+        source_id = compute_source_id(address, segment_id);
         if (!this._pending_segments.has(source_id)) {
           return;
         }
-        pending_segment_data = this._pending_segments.get(source_id);
-        original_source = pending_segment_data.original_source;
-        if (original_source) {
-          original_address = original_source[0], original_segment_id = original_source[1];
-          this._extend_response(original_address, original_segment_id, command_data);
+        this._pending_segments['delete'](source_id);
+        address_string = address.join('');
+        segment_id_string = segment_id.join('');
+        pending_address_segments = this._pending_address_segments.get(address_string);
+        for (i$ = 0, len$ = pending_address_segments.length; i$ < len$; ++i$) {
+          i = i$;
+          existing_segment_id = pending_address_segments[i$];
+          if (existing_segment_id.join('') === segment_id_string) {
+            pending_address_segments.splice(i, 1);
+            return;
+          }
+        }
+        if (!pending_address_segments.length) {
+          this._pending_address_segments['delete'](address_string);
+        }
+      }
+      /**
+       * @param {!Uint8Array}	address			Node at which routing path has started
+       * @param {!Uint8Array}	segment_id		Same segment ID as returned by CREATE_REQUEST
+       * @param {!Uint8Array}	target_address	Address for which to encrypt (can be the same as address argument or any other node in routing path)
+       * @param {!Uint8Array}	plaintext
+       *
+       * @return {!Promise} Will resolve with Uint8Array ciphertext if encrypted successfully
+       */,
+      _encrypt_and_wrap: function(address, segment_id, target_address, plaintext){
+        var source_id, data, promise, target_addresses, this$ = this;
+        source_id = compute_source_id(address, segment_id);
+        data = {
+          'address': address,
+          'segment_id': segment_id,
+          'target_address': target_address,
+          'plaintext': plaintext,
+          'ciphertext': null
+        };
+        promise = this.fire('encrypt', data).then(function(){
+          var ciphertext;
+          ciphertext = data['ciphertext'];
+          if (!(ciphertext instanceof Uint8Array) || ciphertext.length !== plaintext.length + this$._mac_length) {
+            throw 'Encryption failed';
+          }
+          return ciphertext;
+        });
+        if (this._outgoing_established_segments.has(source_id)) {
+          target_addresses = this._outgoing_established_segments.get(source_id);
         } else {
-          this.fire('create_response', address, segment_id, command_data);
+          target_addresses = [target_address];
         }
-      }
-    }
-    /**
-     * @param {!Uint8Array}	address
-     * @param {!Uint8Array}	segment_id
-     * @param {!Uint8Array}	packet_data_encrypted
-     */,
-    _process_packet_data_encrypted: function(address, segment_id, packet_data_encrypted){
-      var this$ = this;
-      this._rewrap(address, segment_id, packet_data_encrypted).then(function(packet_data_encrypted_rewrapped){
-        var source_id;
-        source_id = compute_source_id(address, segment_id);
-        if (!this$._incoming_established_segments.has(source_id) && this$._segments_forwarding_mapping.has(source_id)) {
-          this$._forward_packet_data(source_id, packet_data_encrypted_rewrapped);
-          return;
-        }
-        this$._decrypt_and_unwrap(address, segment_id, packet_data_encrypted_rewrapped).then(function(result){
-          var packet_data, ref$, command, command_data, next_node_address, segment_creation_request_data, next_node_segment_id, original_source, forward_to, e;
-          packet_data = result['plaintext'];
-          ref$ = parse_packet_data(packet_data), command = ref$[0], command_data = ref$[1];
-          switch (command) {
-          case COMMAND_EXTEND_REQUEST:
-            try {
-              next_node_address = command_data.subarray(0, this$._address_length);
-              segment_creation_request_data = command_data.subarray(this$._address_length);
-              next_node_segment_id = this$.create_request(next_node_address, segment_creation_request_data);
-              original_source = [address, segment_id];
-              forward_to = [next_node_address, next_node_segment_id];
-              this$._mark_segment_as_pending(address, segment_id, {
-                forward_to: forward_to
-              });
-              this$._mark_segment_as_pending(next_node_address, next_node_segment_id, {
-                original_source: original_source
-              });
-            } catch (e$) {
-              e = e$;
-              if (!(e instanceof RangeError)) {
-                throw e;
-              }
-              this$._extend_response(address, segment_id, new Uint8Array(0));
-              return;
-            }
-            break;
-          case COMMAND_EXTEND_RESPONSE:
-            if (this$._pending_extensions.has(source_id)) {
-              this$.fire('extend_response', address, segment_id, command_data);
-            }
-            break;
-          default:
-            if (command < CUSTOM_COMMANDS_OFFSET) {
-              return;
-            }
-            this$.fire('data', address, segment_id, result['target_address'], command - CUSTOM_COMMANDS_OFFSET, command_data);
-          }
-        }, function(){
-          var pending_segment_data, forward_to, next_node_address, next_node_segment_id;
-          if (this$._segments_forwarding_mapping.has(source_id)) {
-            this$._forward_packet_data(source_id, packet_data_encrypted_rewrapped);
-          } else if (this$._pending_segments.has(source_id)) {
-            pending_segment_data = this$._pending_segments.get(source_id);
-            forward_to = pending_segment_data.forward_to;
-            if (forward_to) {
-              next_node_address = forward_to[0], next_node_segment_id = forward_to[1];
-              this$._unmark_segment_as_pending(address, segment_id);
-              this$._unmark_segment_as_pending(next_node_address, next_node_segment_id);
-              if (this$._add_segments_forwarding_mapping(address, segment_id, next_node_address, next_node_segment_id)) {
-                this$._forward_packet_data(source_id, packet_data_encrypted_rewrapped);
-              }
+        target_addresses = (function(target_address_string){
+          var result, i$, ref$, len$, target_address;
+          result = [];
+          for (i$ = 0, len$ = (ref$ = target_addresses).length; i$ < len$; ++i$) {
+            target_address = ref$[i$];
+            result.push(target_address);
+            if (target_address_string === target_address.join(',')) {
+              break;
             }
           }
+          return result;
+        }.call(this, target_address.join(',')));
+        target_addresses.reverse().forEach(function(target_address){
+          return promise = promise.then(function(ciphertext){
+            return this$._wrap(address, segment_id, target_address, ciphertext);
+          });
         });
-      })['catch'](error_handler);
-    }
-    /**
-     * @param {string}		source_id
-     * @param {!Uint8Array}	packet_data_encrypted
-     */,
-    _forward_packet_data: function(source_id, packet_data_encrypted){
-      var ref$, address, segment_id, packet;
-      ref$ = this._segments_forwarding_mapping.get(source_id), address = ref$[0], segment_id = ref$[1];
-      packet = generate_packet(this._packet_size, segment_id, packet_data_encrypted);
-      this._send(address, segment_id, packet);
-    }
-    /**
-     * @param {!Uint8Array} address
-     *
-     * @return {!Uint8Array}
-     *
-     * @throws {RangeError}
-     */,
-    _generate_segment_id: function(address){
-      var i$, to$, i, segment_id, source_id;
-      for (i$ = 0, to$ = Math.pow(2, 16); i$ < to$; ++i$) {
-        i = i$;
-        segment_id = number_to_uint_array(i);
+        return promise;
+      }
+      /**
+       * @param {!Uint8Array}	address		Node at which routing path has started
+       * @param {!Uint8Array}	segment_id	Same segment ID as returned by CREATE_REQUEST
+       * @param {!Uint8Array}	ciphertext
+       *
+       * @return {!Promise} Will resolve with Uint8Array plaintext if decrypted successfully
+       */,
+      _decrypt_and_unwrap: function(address, segment_id, ciphertext){
+        var source_id, target_addresses, promise, data, this$ = this;
         source_id = compute_source_id(address, segment_id);
-        if (!(this._outgoing_established_segments.has(source_id) || this._pending_segments.has(source_id) || this._incoming_established_segments.has(source_id) || this._segments_forwarding_mapping.has(source_id))) {
-          return segment_id;
+        if (this._outgoing_established_segments.has(source_id)) {
+          target_addresses = this._outgoing_established_segments.get(source_id);
+        } else {
+          target_addresses = [address];
         }
-      }
-      throw new RangeError('Out of possible segment IDs');
-    }
-    /**
-     * @param {!Uint8Array}	segment_id
-     * @param {number}		command
-     * @param {!Uint8Array}	command_data
-     *
-     * @return {!Uint8Array}
-     */,
-    _generate_packet_plaintext: function(segment_id, command, command_data){
-      var packet_data;
-      packet_data = generate_packet_data(command, command_data, this.get_max_command_data_length());
-      return generate_packet(this._packet_size, segment_id, packet_data);
-    }
-    /**
-     * @param {!Uint8Array}	address
-     * @param {!Uint8Array}	segment_id
-     * @param {!Uint8Array}	target_address
-     * @param {number}		command
-     * @param {!Uint8Array}	command_data
-     *
-     * @return {!Promise} Resolves with Uint8Array packet
-     */,
-    _generate_packet_encrypted: function(address, segment_id, target_address, command, command_data){
-      var packet_data, this$ = this;
-      packet_data = generate_packet_data(command, command_data, this.get_max_command_data_length());
-      return this._encrypt_and_wrap(address, segment_id, target_address, packet_data).then(function(packet_data_encrypted){
-        return generate_packet(this$._packet_size, segment_id, packet_data_encrypted);
-      });
-    }
-    /**
-     * @param {!Uint8Array}	address1
-     * @param {!Uint8Array}	segment_id1
-     * @param {!Uint8Array}	address2
-     * @param {!Uint8Array}	segment_id2
-     */,
-    _add_segments_forwarding_mapping: function(address1, segment_id1, address2, segment_id2){
-      var source_id1, source_id2;
-      source_id1 = compute_source_id(address1, segment_id1);
-      source_id2 = compute_source_id(address2, segment_id2);
-      if (this._segments_forwarding_mapping.has(source_id1) || this._segments_forwarding_mapping.has(source_id2)) {
-        return false;
-      }
-      this._segments_forwarding_mapping.set(source_id1, [address2, segment_id2]);
-      this._segments_forwarding_mapping.set(source_id2, [address1, segment_id1]);
-      return true;
-    }
-    /**
-     * @param {!Uint8Array}	address
-     * @param {!Uint8Array}	segment_id
-     */,
-    _del_segments_forwarding_mapping: function(address, segment_id){
-      var source_id1, ref$, address2, segment_id2, source_id2;
-      source_id1 = compute_source_id(address, segment_id);
-      if (this._segments_forwarding_mapping.has(source_id1)) {
-        ref$ = this._segments_forwarding_mapping.get(source_id1), address2 = ref$[0], segment_id2 = ref$[1];
-        source_id2 = compute_source_id(address2, segment_id2);
-        this._segments_forwarding_mapping['delete'](source_id1);
-        this._segments_forwarding_mapping['delete'](source_id2);
-      }
-    }
-    /**
-     * @param {!Uint8Array}	address
-     * @param {!Uint8Array}	segment_id
-     * @param {!Object}		[data]
-     */,
-    _mark_segment_as_pending: function(address, segment_id, data){
-      var source_id, address_string, pending_address_segments, old_pending_segment_id;
-      data == null && (data = {});
-      this._unmark_segment_as_pending(address, segment_id);
-      source_id = compute_source_id(address, segment_id);
-      address_string = address.join('');
-      this._pending_segments.set(source_id, data);
-      if (!this._pending_address_segments.has(address_string)) {
-        this._pending_address_segments.set(address_string, []);
-      }
-      pending_address_segments = this._pending_address_segments.get(address_string);
-      pending_address_segments.push(segment_id);
-      if (pending_address_segments.length > this._max_pending_segments) {
-        old_pending_segment_id = pending_address_segments.shift();
-        this._unmark_segment_as_pending(address, old_pending_segment_id);
-      }
-    }
-    /**
-     * @param {!Uint8Array}	address
-     * @param {!Uint8Array}	segment_id
-     */,
-    _unmark_segment_as_pending: function(address, segment_id){
-      var source_id, address_string, segment_id_string, pending_address_segments, i$, len$, i, existing_segment_id;
-      source_id = compute_source_id(address, segment_id);
-      if (!this._pending_segments.has(source_id)) {
-        return;
-      }
-      this._pending_segments['delete'](source_id);
-      address_string = address.join('');
-      segment_id_string = segment_id.join('');
-      pending_address_segments = this._pending_address_segments.get(address_string);
-      for (i$ = 0, len$ = pending_address_segments.length; i$ < len$; ++i$) {
-        i = i$;
-        existing_segment_id = pending_address_segments[i$];
-        if (existing_segment_id.join('') === segment_id_string) {
-          pending_address_segments.splice(i, 1);
-          return;
-        }
-      }
-      if (!pending_address_segments.length) {
-        this._pending_address_segments['delete'](address_string);
-      }
-    }
-    /**
-     * @param {!Uint8Array}	address			Node at which routing path has started
-     * @param {!Uint8Array}	segment_id		Same segment ID as returned by CREATE_REQUEST
-     * @param {!Uint8Array}	target_address	Address for which to encrypt (can be the same as address argument or any other node in routing path)
-     * @param {!Uint8Array}	plaintext
-     *
-     * @return {!Promise} Will resolve with Uint8Array ciphertext if encrypted successfully
-     */,
-    _encrypt_and_wrap: function(address, segment_id, target_address, plaintext){
-      var source_id, data, promise, target_addresses, this$ = this;
-      source_id = compute_source_id(address, segment_id);
-      data = {
-        'address': address,
-        'segment_id': segment_id,
-        'target_address': target_address,
-        'plaintext': plaintext,
-        'ciphertext': null
-      };
-      promise = this.fire('encrypt', data).then(function(){
-        var ciphertext;
-        ciphertext = data['ciphertext'];
-        if (!(ciphertext instanceof Uint8Array) || ciphertext.length !== plaintext.length + this$._mac_length) {
-          throw 'Encryption failed';
-        }
-        return ciphertext;
-      });
-      if (this._outgoing_established_segments.has(source_id)) {
-        target_addresses = this._outgoing_established_segments.get(source_id);
-      } else {
-        target_addresses = [target_address];
-      }
-      target_addresses = (function(target_address_string){
-        var result, i$, ref$, len$, target_address;
-        result = [];
-        for (i$ = 0, len$ = (ref$ = target_addresses).length; i$ < len$; ++i$) {
-          target_address = ref$[i$];
-          result.push(target_address);
-          if (target_address_string === target_address.join(',')) {
-            break;
-          }
-        }
-        return result;
-      }.call(this, target_address.join(',')));
-      target_addresses.reverse().forEach(function(target_address){
-        return promise = promise.then(function(ciphertext){
-          return this$._wrap(address, segment_id, target_address, ciphertext);
-        });
-      });
-      return promise;
-    }
-    /**
-     * @param {!Uint8Array}	address		Node at which routing path has started
-     * @param {!Uint8Array}	segment_id	Same segment ID as returned by CREATE_REQUEST
-     * @param {!Uint8Array}	ciphertext
-     *
-     * @return {!Promise} Will resolve with Uint8Array plaintext if decrypted successfully
-     */,
-    _decrypt_and_unwrap: function(address, segment_id, ciphertext){
-      var source_id, target_addresses, promise, data, this$ = this;
-      source_id = compute_source_id(address, segment_id);
-      if (this._outgoing_established_segments.has(source_id)) {
-        target_addresses = this._outgoing_established_segments.get(source_id);
-      } else {
-        target_addresses = [address];
-      }
-      promise = Promise.reject();
-      data = {
-        'address': address,
-        'segment_id': segment_id,
-        'target_address': null,
-        'ciphertext': ciphertext,
-        'plaintext': null
-      };
-      target_addresses.forEach(function(target_address, i){
-        promise = promise['catch'](function(){
-          data['target_address'] = target_address;
-          if (i > 0) {
-            return this$._unwrap(address, segment_id, target_address, data['ciphertext']).then(function(arg$){
-              data['ciphertext'] = arg$;
+        promise = Promise.reject();
+        data = {
+          'address': address,
+          'segment_id': segment_id,
+          'target_address': null,
+          'ciphertext': ciphertext,
+          'plaintext': null
+        };
+        target_addresses.forEach(function(target_address, i){
+          promise = promise['catch'](function(){
+            data['target_address'] = target_address;
+            if (i > 0) {
+              return this$._unwrap(address, segment_id, target_address, data['ciphertext']).then(function(arg$){
+                data['ciphertext'] = arg$;
+                return this$.fire('decrypt', data);
+              });
+            } else {
               return this$.fire('decrypt', data);
-            });
-          } else {
-            return this$.fire('decrypt', data);
-          }
-        }).then(function(){
-          var plaintext;
-          plaintext = data['plaintext'];
-          if (!(plaintext instanceof Uint8Array) || plaintext.length !== ciphertext.length - this$._mac_length) {
-            throw 'Decryption failed';
-          }
-          return data;
+            }
+          }).then(function(){
+            var plaintext;
+            plaintext = data['plaintext'];
+            if (!(plaintext instanceof Uint8Array) || plaintext.length !== ciphertext.length - this$._mac_length) {
+              throw 'Decryption failed';
+            }
+            return data;
+          });
         });
-      });
-      return promise;
-    }
-    /**
-     * @param {!Uint8Array}	source_address
-     * @param {!Uint8Array}	source_segment_id
-     * @param {!Uint8Array}	data
-     *
-     * @return {!Promise} Will resolve with Uint8Array re-wrapped encrypted data
-     */,
-    _rewrap: function(source_address, source_segment_id, data){
-      var source_id, ref$, target_address, target_segment_id;
-      source_id = compute_source_id(source_address, source_segment_id);
-      if (this._outgoing_established_segments.has(source_id) || this._incoming_established_segments.has(source_id)) {
-        return this._unwrap(source_address, source_segment_id, source_address, data);
-      } else {
-        ref$ = this._segments_forwarding_mapping.get(source_id), target_address = ref$[0], target_segment_id = ref$[1];
-        return this._wrap(target_address, target_segment_id, target_address, data);
+        return promise;
       }
-    }
-    /**
-     * @param {!Uint8Array}	address
-     * @param {!Uint8Array}	segment_id
-     * @param {!Uint8Array}	target_address
-     * @param {!Uint8Array}	unwrapped
-     *
-     * @return {!Promise} Will resolve with Uint8Array wrapped data
-     */,
-    _wrap: function(address, segment_id, target_address, unwrapped){
-      var data, this$ = this;
-      data = {
-        'address': address,
-        'segment_id': segment_id,
-        'target_address': target_address,
-        'unwrapped': unwrapped,
-        'wrapped': null
-      };
-      return this.fire('wrap', data).then(function(){
-        var wrapped;
-        wrapped = data['wrapped'];
-        if (!(wrapped instanceof Uint8Array) || wrapped.length !== unwrapped.length) {
-          throw 'Wrapping failed';
+      /**
+       * @param {!Uint8Array}	source_address
+       * @param {!Uint8Array}	source_segment_id
+       * @param {!Uint8Array}	data
+       *
+       * @return {!Promise} Will resolve with Uint8Array re-wrapped encrypted data
+       */,
+      _rewrap: function(source_address, source_segment_id, data){
+        var source_id, ref$, target_address, target_segment_id;
+        source_id = compute_source_id(source_address, source_segment_id);
+        if (this._outgoing_established_segments.has(source_id) || this._incoming_established_segments.has(source_id)) {
+          return this._unwrap(source_address, source_segment_id, source_address, data);
+        } else {
+          ref$ = this._segments_forwarding_mapping.get(source_id), target_address = ref$[0], target_segment_id = ref$[1];
+          return this._wrap(target_address, target_segment_id, target_address, data);
         }
-        return wrapped;
-      });
-    }
-    /**
-     * @param {!Uint8Array}	address
-     * @param {!Uint8Array}	segment_id
-     * @param {!Uint8Array}	target_address
-     * @param {!Uint8Array}	wrapped
-     *
-     * @return {!Promise} Will resolve with Uint8Array unwrapped data
-     */,
-    _unwrap: function(address, segment_id, target_address, wrapped){
-      var data, this$ = this;
-      data = {
-        'address': address,
-        'segment_id': segment_id,
-        'target_address': target_address,
-        'wrapped': wrapped,
-        'unwrapped': null
-      };
-      return this.fire('unwrap', data).then(function(){
-        var unwrapped;
-        unwrapped = data['unwrapped'];
-        if (!(unwrapped instanceof Uint8Array) || unwrapped.length !== wrapped.length) {
-          throw 'Unwrapping failed';
-        }
-        return unwrapped;
-      });
-    }
-  };
-  Ronion.prototype = Object.assign(Object.create(asyncEventer.prototype), Ronion.prototype);
-  Object.defineProperty(Ronion.prototype, 'constructor', {
-    enumerable: false,
-    value: Ronion
-  });
+      }
+      /**
+       * @param {!Uint8Array}	address
+       * @param {!Uint8Array}	segment_id
+       * @param {!Uint8Array}	target_address
+       * @param {!Uint8Array}	unwrapped
+       *
+       * @return {!Promise} Will resolve with Uint8Array wrapped data
+       */,
+      _wrap: function(address, segment_id, target_address, unwrapped){
+        var data, this$ = this;
+        data = {
+          'address': address,
+          'segment_id': segment_id,
+          'target_address': target_address,
+          'unwrapped': unwrapped,
+          'wrapped': null
+        };
+        return this.fire('wrap', data).then(function(){
+          var wrapped;
+          wrapped = data['wrapped'];
+          if (!(wrapped instanceof Uint8Array) || wrapped.length !== unwrapped.length) {
+            throw 'Wrapping failed';
+          }
+          return wrapped;
+        });
+      }
+      /**
+       * @param {!Uint8Array}	address
+       * @param {!Uint8Array}	segment_id
+       * @param {!Uint8Array}	target_address
+       * @param {!Uint8Array}	wrapped
+       *
+       * @return {!Promise} Will resolve with Uint8Array unwrapped data
+       */,
+      _unwrap: function(address, segment_id, target_address, wrapped){
+        var data, this$ = this;
+        data = {
+          'address': address,
+          'segment_id': segment_id,
+          'target_address': target_address,
+          'wrapped': wrapped,
+          'unwrapped': null
+        };
+        return this.fire('unwrap', data).then(function(){
+          var unwrapped;
+          unwrapped = data['unwrapped'];
+          if (!(unwrapped instanceof Uint8Array) || unwrapped.length !== wrapped.length) {
+            throw 'Unwrapping failed';
+          }
+          return unwrapped;
+        });
+      }
+    };
+    Ronion.prototype = Object.assign(Object.create(asyncEventer.prototype), Ronion.prototype);
+    Ronion.prototype.fire = Ronion.prototype['fire'];
+    Ronion.prototype['process_packet'] = Ronion.prototype.process_packet;
+    Ronion.prototype['confirm_outgoing_segment_established'] = Ronion.prototype.confirm_outgoing_segment_established;
+    Ronion.prototype['confirm_incoming_segment_established'] = Ronion.prototype.confirm_incoming_segment_established;
+    Ronion.prototype['confirm_extended_path'] = Ronion.prototype.confirm_extended_path;
+    Ronion.prototype['create_request'] = Ronion.prototype.create_request;
+    Ronion.prototype['create_response'] = Ronion.prototype.create_response;
+    Ronion.prototype['extend_request'] = Ronion.prototype.extend_request;
+    Ronion.prototype['destroy'] = Ronion.prototype.destroy;
+    Ronion.prototype['data'] = Ronion.prototype.data;
+    Ronion.prototype['get_max_command_data_length'] = Ronion.prototype.get_max_command_data_length;
+    Object.defineProperty(Ronion.prototype, 'constructor', {
+      value: Ronion
+    });
+    return Ronion;
+  }
+  if (typeof define === 'function' && define['amd']) {
+    define(['async-eventer'], Wrapper);
+  } else if (typeof exports === 'object') {
+    module.exports = Wrapper(require('async-eventer'));
+  } else {
+    this['ronion'] = Wrapper(this['async_eventer']);
+  }
 }).call(this);
