@@ -19,6 +19,20 @@ Still considered unstable, so be careful and make sure to report any issues you 
 npm install ronion
 ```
 
+## How to use
+Node.js:
+```javascript
+var ronion = require('ronion')
+
+// Do stuff
+```
+Browser:
+```javascript
+requirejs(['ronion'], function (ronion) {
+    // Do stuff
+})
+```
+
 ## Implementation API
 Below if the list of public interfaces (constructors, methods and events) that are available.
 Tests in `tests` directory can be used as an additional source of usage examples (not necessarily secure though!).
