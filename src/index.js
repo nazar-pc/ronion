@@ -317,10 +317,15 @@
        */,
       get_max_command_data_length: function(){
         return this._packet_size - 2 - 1 - 2 - this._mac_length;
-      },
+      }
+      /**
+       * @param {!Uint8Array}	address
+       * @param {!Uint8Array}	segment_id
+       * @param {!Uint8Array}	packet
+       */,
       _send: function(address, segment_id, packet){
         this.fire('activity', address, segment_id);
-        return this.fire('send', address, packet);
+        this.fire('send', address, packet);
       }
       /**
        * @param {!Uint8Array}	address

@@ -295,7 +295,12 @@ function Wrapper (async-eventer)
 			# We use the same length limit both for encrypted and plaintext packets command data, since plaintext can be wrapped into encrypted one
 			# Total packet size length - segment ID - command - command_data_length - MAC (of the packet data)
 			@_packet_size - 2 - 1 - 2 - @_mac_length
-		_send : (address, segment_id, packet) ->
+		/**
+		 * @param {!Uint8Array}	address
+		 * @param {!Uint8Array}	segment_id
+		 * @param {!Uint8Array}	packet
+		 */
+		_send : (address, segment_id, packet) !->
 			@fire('activity', address, segment_id)
 			@fire('send', address, packet)
 		/**
